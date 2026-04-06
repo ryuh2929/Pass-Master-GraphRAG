@@ -1,0 +1,58 @@
+services:
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: passmaster-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_MAX_LOADED_MODELS=2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5.18
+    container_name: passmaster-neo4j
+    ports:
+      - "7474:7474"   # 브라우저 UI
+      - "7687:7687"   # Bolt (앱 연결)
+    volumes:
+      - neo4j_data:/data
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASSWORD}
+      - NEO4J_PLUGINS=["apoc"]
+    restart: unless-stopped
+
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    container_name: passmaster-tei
+    ports:
+      - "8080:80"
+    volumes:
+      - tei_data:/data
+    command: --model-id BAAI/bge-m3 --port 80
+    restart: unless-stopped
+
+  tei-reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    container_name: passmaster-tei-reranker
+    ports:
+      - "8081:80"
+    volumes:
+      - tei_reranker_data:/data
+    command: --model-id BAAI/bge-reranker-v2-m3 --port 80
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  neo4j_data:
+  tei_data:
+  tei_reranker_data:
