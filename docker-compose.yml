@@ -7,8 +7,10 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    runtime: nvidia
     environment:
       - OLLAMA_MAX_LOADED_MODELS=2
+      - NVIDIA_VISIBLE_DEVICES=all
     deploy:
       resources:
         reservations:
@@ -45,19 +47,15 @@ services:
       - "8080:80"
     volumes:
       - tei_data:/data
-    # command: ["--model-id", "BAAI/bge-m3", "--port", "80"]
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
     command: ["--model-id", "BAAI/bge-m3", "--port", "80"]
+    # command: ["--model-id", "intfloat/multilingual-e5-small", "--port", "80"]
     restart: unless-stopped
 
   tei-reranker:
-    image: ghcr.io/huggingface/text-embeddings-inference:latest
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
     container_name: passmaster-tei-reranker
     ports:
       - "8081:80"
