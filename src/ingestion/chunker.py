@@ -12,48 +12,40 @@ def chunk_pdf_text(full_text, valid_dates):
 
     full_text = full_text.replace('\x07', ' ')
     # 1. 소제목(001) 위치만 먼저 찾습니다. (이건 매우 빠릅니다)
-    section_pattern = re.compile(r'(?:^|\n)(\d{3})\s+([^\n]+?)\s+([A-C])(?:\s|\n|$)')
+    section_pattern = re.compile(
+        r'(\d{6})\s+'           # 헤더 코드 (6자리 숫자)
+        r'([\d\.,\s]*?)'        # 실기 날짜들 (없을 수도 있음)
+        r'(?:필기\s+([\d\.,\s]+?)\s+)?'  # 필기 키워드 + 날짜 (없을 수도 있음, 옵셔널)
+        r'(\d{3})\s+'           # 섹션 ID (3자리 숫자)
+        r'([^\n]+?)\s+'         # 제목
+        r'([A-C])(?:\s|\n|$)'  # 중요도
+    )
     matches = list(section_pattern.finditer(full_text))
     chunks = []
 
     for i in range(len(matches)):
-        # 2. 이번 섹션의 시작점 결정
-        # 기본값은 소제목 시작점이지만, 그 윗부분(약 100자 정도)에 날짜가 있는지 확인합니다.
-        current_match_start = matches[i].start()
-        lookback_window = full_text[max(0, current_match_start-100):current_match_start]
-        
-        # 윗부분에서 가장 먼저 나오는 날짜의 위치를 찾음
-        date_matches = list(re.finditer(r'\d{2}\.(?:1[0-2]|[1-9])', lookback_window))
-        if date_matches:
-            # 날짜가 있다면 그 날짜의 시작점으로 start_idx를 당깁니다.
-            start_idx = max(0, current_match_start - 100) + date_matches[0].start()
-        else:
-            start_idx = current_match_start
+        # 시작점 = 헤더 코드 시작점 (matches[i].start()가 이미 6자리 코드 위치)
+        start_idx = matches[i].start()
 
-        # 3. 끝점 결정 (다음 섹션의 시작점 혹은 전체 끝)
+        # 끝점 = 다음 섹션 시작점 혹은 전체 끝
         if i + 1 < len(matches):
-            next_match_start = matches[i+1].start()
-            # 다음 섹션 윗부분에 날짜가 있는지 또 확인해서 그 전까지만 끊음
-            next_lookback = full_text[max(0, next_match_start-100):next_match_start]
-            next_date_matches = list(re.finditer(r'\d{2}\.(?:1[0-2]|[1-9])', next_lookback))
-            if next_date_matches:
-                end_idx = max(0, next_match_start - 100) + next_date_matches[0].start()
-            else:
-                end_idx = next_match_start
+            end_idx = matches[i+1].start()
         else:
             end_idx = len(full_text)
-        
+
         section_text = full_text[start_idx:end_idx].strip()
         
         # 메타데이터 추출 (matches[i] 그룹 사용)
-        item_id = matches[i].group(1)
-        title = matches[i].group(2).strip()
-        importance = matches[i].group(3).strip()
-        
-        # 본문 내 날짜 추출 (이제 본문 안에 본인의 날짜가 포함되어 있음)
-        found_in_section = set(re.findall(r'(?<!\d)\d{2}\.(?:1[0-2]|[1-9])(?!\d)', section_text))
-        actual_exam_dates = sorted(list(found_in_section.intersection(valid_dates)))
-        
+        practical_raw = matches[i].group(2) or ""
+        written_raw = matches[i].group(3) or ""
+        item_id = matches[i].group(4)
+        title = matches[i].group(5).strip()
+        importance = matches[i].group(6).strip()
+
+        practical_dates = sorted([d for d in re.findall(r'\d{2}\.(?:1[0-2]|[1-9])', practical_raw) if d in valid_dates])
+        written_dates = sorted([d for d in re.findall(r'\d{2}\.(?:1[0-2]|[1-9])', written_raw) if d in valid_dates])
+        actual_exam_dates = sorted(list(set(practical_dates + written_dates)))
+                
         # 결과 딕셔너리 생성
         chunks.append({
             "document": section_text,  # LLM이 읽을 본문
@@ -62,9 +54,11 @@ def chunk_pdf_text(full_text, valid_dates):
                 "chapter": get_chapter_name(item_id),
                 "title": title,
                 "importance": importance,
-                "exam_dates": actual_exam_dates,
+                "exam_dates": actual_exam_dates,          # 전체 날짜
+                "practical_dates": practical_dates,        # 실기만
+                "written_dates": written_dates,            # 필기만
                 "occurrence_count": len(actual_exam_dates),
-                "is_practical": any(d in ['20.5','20.7','20.10','20.11','21.4','21.7','21.10','22.5','22.10','23.4','23.10','24.4','24.7', '24.10','25.4','25.7','25.11'] for d in actual_exam_dates) # 실기 날짜 포함 여부
+                "is_practical": len(practical_dates) > 0 # 실기 날짜 포함 여부
             }
         })
 
@@ -117,20 +111,20 @@ def get_chapter_name(item_id_str):
     except ValueError:
         return "알 수 없음"
 
-def extract_full_text(file_pattern):
+def extract_full_text(file_list):
     """
     PDF 파일을 열어서 모든 페이지의 텍스트를 하나의 문자열로 합칩니다.
     """
     full_text = ""
 
     # 와일드카드 패턴에 맞는 모든 파일 경로 리스트 가져오기
-    pdf_files = glob.glob(file_pattern)
+    pdf_files = [f for f in file_list if os.path.exists(f)]
 
     # 1단 구성 페이지 리스트 (0부터 시작하는 인덱스)
     single_col_pages = {8, 9, 10, 11, 21, 22, 23, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 98}
     
     if not pdf_files:
-        print(f"[!] 파일을 찾을 수 없습니다: {file_pattern}")
+        print(f"[!] 파일을 찾을 수 없습니다: {file_list}")
         return ""
 
     print(f"[*] 총 {len(pdf_files)}개의 파일을 찾았습니다: {pdf_files}")
@@ -166,8 +160,13 @@ def extract_full_text(file_pattern):
 
 if __name__ == "__main__":
     # 1. PDF 파일 경로 설정 (data 폴더 안에 넣어두세요)
-    PATH_PATTERN = "data/*.pdf"
-    OUTPUT_DIR = "data"
+
+    # 특정 파일명 지정 (리스트로 여러 개 가능)
+    TARGET_FILES = [
+        "data/raw/2026_정보처리기사_실기_기출문제집_핵심요약(20260223).pdf",
+        # "data/다른파일.pdf",  # 추가하려면 여기에
+    ]
+    OUTPUT_DIR = "data/processed"
     OUTPUT_FILE = os.path.join(OUTPUT_DIR, "processed_chunks.json")
 
     # 2. 폴더가 없으면 생성
@@ -176,7 +175,7 @@ if __name__ == "__main__":
 
     # 3. 텍스트 추출 및 청킹 실행
     print("[*] PDF 텍스트 추출 및 청킹 프로세스 시작...")
-    result_text = extract_full_text(PATH_PATTERN)
+    result_text = extract_full_text(TARGET_FILES)
 
     print("\n--- 추출된 전체 텍스트 일부 ---")
     print(result_text[:100])  # 처음 100자만 출력 (디버깅용)
