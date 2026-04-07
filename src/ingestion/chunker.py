@@ -164,7 +164,7 @@ if __name__ == "__main__":
 
     # 특정 파일명 지정 (리스트로 여러 개 가능)
     TARGET_FILES = [
-        "data/raw/2026_정보처리기사_실기_기출문제집_핵심요약(20260223).pdf",
+        "data/raw/정보처리기사_핵심요약.pdf",
         # "data/다른파일.pdf",  # 추가하려면 여기에
     ]
     OUTPUT_DIR = "data/processed"
