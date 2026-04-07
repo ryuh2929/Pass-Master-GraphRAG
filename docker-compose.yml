@@ -32,23 +32,38 @@ services:
     restart: unless-stopped
 
   tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    image: ghcr.io/huggingface/text-embeddings-inference:latest
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     container_name: passmaster-tei
     ports:
       - "8080:80"
     volumes:
       - tei_data:/data
-    command: --model-id BAAI/bge-m3 --port 80
+    # command: ["--model-id", "BAAI/bge-m3", "--port", "80"]
+    command: ["--model-id", "BAAI/bge-m3", "--port", "80"]
     restart: unless-stopped
 
   tei-reranker:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    image: ghcr.io/huggingface/text-embeddings-inference:latest
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     container_name: passmaster-tei-reranker
     ports:
       - "8081:80"
     volumes:
       - tei_reranker_data:/data
-    command: --model-id BAAI/bge-reranker-v2-m3 --port 80
+    command: ["--model-id", "BAAI/bge-reranker-base", "--port", "80"]
     restart: unless-stopped
 
 volumes:
