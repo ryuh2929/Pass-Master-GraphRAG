@@ -15,10 +15,11 @@ def chunk_pdf_text(full_text, valid_dates):
     section_pattern = re.compile(
         r'(\d{6})\s+'           # 헤더 코드 (6자리 숫자)
         r'([\d\.,\s]*?)'        # 실기 날짜들 (없을 수도 있음)
-        r'(?:필기\s+([\d\.,\s]+?)\s+)?'  # 필기 키워드 + 날짜 (없을 수도 있음, 옵셔널)
+        r'(?:필기\s+([\d\.,\s]+?)\s+)?'  # 필기 키워드 + 날짜 (없을 수도 있음)
+        r'[\s…,]*'              # 줄임표, 쉼표, 공백 등 노이즈
         r'(\d{3})\s+'           # 섹션 ID (3자리 숫자)
         r'([^\n]+?)\s+'         # 제목
-        r'([A-C])(?:\s|\n|$)'  # 중요도
+        r'([A-C])(?:\s|\n|$)'   # 중요도
     )
     matches = list(section_pattern.finditer(full_text))
     chunks = []
