@@ -63,62 +63,65 @@ class ExamCrawler:
         problems = []
         current_prob = None
         
-        # 본문 내의 모든 직계 자식 태그를 순회
-        for tag in content.find_all(['p', 'table', 'div', 'figure'], recursive=False):
+        # 모든 p, table, div를 순서대로 탐색
+        # 단, 중첩된 구조를 피하기 위해 content 바로 아래의 요소들 위주로 탐색 로직 변경
+        elements = content.find_all(['p', 'table', 'div', 'figure'])
+        
+        for tag in elements:
+            # 이미 처리된 태그(예: moreless 내부의 p)는 스킵하기 위한 필터링
+            if tag.find_parent('div', class_='moreless-content'):
+                continue
+
             text = tag.get_text(strip=True)
             
-            # 문제 시작 감지 (예: "1. ", "11. ")
-            # p 태그 내부에 b 태그가 있거나, p 태그 자체가 숫자로 시작하는 경우
-            is_start = False
-            first_text = tag.get_text()
-            match = re.match(r'^\s*(\d+)[\.\)]', first_text)
+            # [패턴 강화] <b>1.</b> 또는 <span>1.</span> 등 숫자 시작 패턴 탐색
+            # 정규식: 숫자 + 마침표/괄호 + 공백(선택)
+            match = re.match(r'^(\d+)[\.\)]', text)
             
             if match:
-                # 이전 문제가 있었다면 정답 없이 종료된 것이므로 저장(있을 경우)
                 if current_prob:
                     problems.append(current_prob)
                 
                 prob_no = match.group(1)
                 current_prob = {
                     "no": prob_no,
-                    "question": first_text.strip(),
+                    "question": tag.get_text(separator="\n", strip=True),
                     "answer": "",
                     "images": []
                 }
-                is_start = True
-            
-            if current_prob and not is_start:
-                # 정답 구역(moreless)을 만났을 때
-                if tag.name == 'div' and 'moreLess' in tag.get('class', []):
+                # 문제 번호가 포함된 태그 내 이미지 체크
+                img = tag.find('img')
+                if img:
+                    self._process_image(img, year, exam_round, prob_no, current_prob)
+                continue
+
+            if current_prob:
+                # 정답 구역(moreless) 처리
+                if tag.name == 'div' and ('moreLess' in tag.get('class', []) or 'moreless' in str(tag.get('class'))):
                     ans_content = tag.select_one('.moreless-content')
                     if ans_content:
                         current_prob["answer"] = ans_content.get_text(strip=True)
-                    
-                    # 정답을 찾았으므로 한 문제 완성
-                    problems.append(current_prob)
-                    current_prob = None
+                        problems.append(current_prob)
+                        current_prob = None
                     continue
 
-                # 이미지 추출
-                img_tag = tag.find('img')
-                if img_tag:
-                    img_src = img_tag.get('src') or img_tag.get('data-src')
-                    if img_src:
-                        img_name = f"{year}_{exam_round}_{current_prob['no']}.png"
-                        local_path = self.download_image(img_src, img_name)
-                        if local_path: current_prob["images"].append(local_path)
+                # 이미지 처리 전용 메서드 호출
+                img = tag.find('img')
+                if img:
+                    self._process_image(img, year, exam_round, current_prob['no'], current_prob)
 
-                # 표(table) 또는 일반 텍스트 추가
+                # 내용 누적 (표 또는 텍스트)
                 if tag.name == 'table':
-                    # 표는 텍스트 형태로 변환하여 질문에 추가
-                    rows = []
-                    for tr in tag.find_all('tr'):
-                        cells = [td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]
-                        rows.append(" | ".join(cells))
+                    rows = [" | ".join([td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]) for tr in tag.find_all('tr')]
                     current_prob["question"] += "\n[표]\n" + "\n".join(rows)
-                else:
-                    if text:
+                elif text and tag.name != 'figure':
+                    # 너무 짧은 의미 없는 텍스트 방지 및 중복 방지
+                    if text not in current_prob["question"]:
                         current_prob["question"] += "\n" + text
+
+        # 루프 종료 후 남은 마지막 문제 처리
+        if current_prob and current_prob not in problems:
+            problems.append(current_prob)
 
         return {
             "year": year,
@@ -126,6 +129,14 @@ class ExamCrawler:
             "url": url,
             "problems": problems
         }
+
+    def _process_image(self, img_tag, year, round_val, no, prob_dict):
+        """이미지 추출 및 다운로드 공통 로직"""
+        img_src = img_tag.get('src') or img_tag.get('data-src') or img_tag.get('data-url')
+        if img_src and 'img.png' in img_src: # 티스토리 이미지 엔진 주소 확인
+            img_name = f"{year}_{round_val}_{no}_{int(time.time())}.png"
+            path = self.download_image(img_src, img_name)
+            if path: prob_dict["images"].append(path)
 
     def run(self, urls: List[str]):
         for url in urls:
