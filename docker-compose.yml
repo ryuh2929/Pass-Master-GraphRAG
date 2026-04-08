@@ -10,6 +10,7 @@ services:
     runtime: nvidia
     environment:
       - OLLAMA_MAX_LOADED_MODELS=2
+      # - OLLAMA_KEEP_ALIVE=1m
       - NVIDIA_VISIBLE_DEVICES=all
     deploy:
       resources:
@@ -31,6 +32,9 @@ services:
     environment:
       - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASSWORD}
       - NEO4J_PLUGINS=["apoc"]
+      # - NEO4J_dbms_memory_heap_initial_size=512m
+      # - NEO4J_dbms_memory_heap_max_size=1G
+      - NEO4J_dbms_memory_pagecache_size=1G
     restart: unless-stopped
 
   tei:
@@ -52,6 +56,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
     command: ["--model-id", "BAAI/bge-m3", "--port", "80"]
     # command: ["--model-id", "intfloat/multilingual-e5-small", "--port", "80"]
+    # shm_size: '2gb' # GPU 가속 시 공유 메모리 확장이 안정성에 도움됨
     restart: unless-stopped
 
   tei-reranker:
@@ -62,6 +67,7 @@ services:
     volumes:
       - tei_reranker_data:/data
     command: ["--model-id", "BAAI/bge-reranker-base", "--port", "80"]
+    # command: ["--model-id", "BAAI/bge-reranker-v2-m3", "--port", "80"]
     restart: unless-stopped
 
 volumes:
