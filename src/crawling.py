@@ -52,82 +52,89 @@ class ExamCrawler:
         current_prob = None
         last_prob_no = 0  # 마지막으로 확정된 문제 번호 추적
         
+        # recursive=True 유지하되, 정답/코드 구역의 중복 탐색을 막기 위한 로직 강화
         elements = content.find_all(['p', 'table', 'div', 'figure', 'pre'], recursive=True)
+
         visited_tags = set()
         downloaded_urls = set()
         is_parsing_finished = False
 
+        # moreLess 내부 자식만 사전 visited 처리 (moreLess div 자체는 제외)
+        for more_div in content.find_all('div', class_='moreLess'):
+            for child in more_div.find_all():
+                visited_tags.add(child)
+
         for tag in elements:
-            if is_parsing_finished:
-                break
+            if is_parsing_finished: break
+            if tag in visited_tags: continue
 
             # 이미 처리된 태그나 정답 박스 안의 내용은 지문으로 읽지 않음
-            if tag in visited_tags or tag.find_parent('div', class_='moreless-content'):
-                continue
+            # if tag in visited_tags or tag.find_parent('div', class_='moreless-content'):
+            #     continue
             
-            text = tag.get_text(strip=True)
+            # text 추출 시 separator를 추가하여 줄바꿈이 붙어버리는 문제 방지
+            text = tag.get_text(" ", strip=True)
             if not text and not tag.find('img'): continue
 
-            # 신규 문제 판단 로직: last_prob_no를 활용한 엄격한 검증
-            is_new_problem = False
-            match = re.search(r'^(\d+)[\.\)]', text)
+            # -------------------------------------------------------
+            # 1. 정답 구역(moreless) 처리
+            # -------------------------------------------------------
+            # 태그의 클래스 리스트를 안전하게 가져옴
+            tag_classes = tag.get('class', []) if tag.get('class') else []
             
-            if match:
-                # 번호가 정확히 다음 번호이거나, 첫 시작(1번)인 경우만 인정
-                prob_no_val = int(match.group(1))
-                
-                # 1. 아예 처음 시작하는 경우 (1번)
-                if last_prob_no == 0 and prob_no_val == 1:
-                    is_new_problem = True
-                
-                # 2. 현재 수집 중인 문제가 있고, '정답(answer)'이 이미 채워진 상태에서 다음 번호가 온 경우
-                # 정답 내부의 '1. ON' 등은 last_prob_no보다 작으므로 여기서 걸러짐
-                elif current_prob and current_prob['answer'] and prob_no_val > last_prob_no:
-                    is_new_problem = True
-                
-                # 3. [예외] 정답은 아직 못 찾았지만, 태그가 <b>나 <strong>으로 감싸진 '제목형' 번호인 경우
-                elif current_prob and not current_prob['answer'] and prob_no_val == last_prob_no + 1:
-                    is_bold = tag.name in ['b', 'strong'] or tag.find(['b', 'strong'])
-                    if is_bold:
-                        is_new_problem = True
-
-            if is_new_problem:
-                # 새로운 문제를 만들기 전에 이전 문제 저장 (번호가 넘어갔으므로)
-                if current_prob:
-                    problems.append(current_prob)
-                
-                last_prob_no = int(match.group(1)) # 현재 번호 확정
-                current_prob = {
-                    "no": str(last_prob_no),
-                    "question": text,
-                    "answer": "",
-                    "images": []
-                }
-                visited_tags.add(tag)
-                self._extract_images(tag, year, exam_round, current_prob, downloaded_urls)
-                continue
-
-            if current_prob:
-                # 1. 정답 구역(moreless) 처리
-                if 'moreLess' in tag.get('class', []) or tag.select_one('.btn-toggle-moreless'):
-                    ans_div = tag.select_one('.moreless-content')
-                    if ans_div:
-                        # 정답 텍스트 추출 및 저장
-                        current_prob["answer"] = ans_div.get_text(separator="\n", strip=True)
-                        
-                        # 중요: 정답 박스 내부의 모든 태그를 방문 처리하여 루프에서 중복 탐색 방지
-                        visited_tags.add(tag)
-                        for child in tag.find_all():
-                            visited_tags.add(child)
-                            
-                        # 20번 정답을 다 읽었다면 플래그 세팅
-                        if current_prob['no'] == "20":
-                            is_parsing_finished = True
-                            problems.append(current_prob)
-                            current_prob = None
+            # [1] 정답 박스(moreLess)인지 최우선 확인
+            # 클래스에 moreLess가 있거나 자식에 버튼이 있는 경우
+            is_ans_box = (
+                'moreLess' in tag.get('class', []) or
+                tag.get('data-ke-type') == 'moreLess' or
+                tag.select_one('.moreless-content')
+            )
+            if is_ans_box:
+                ans_div = tag.select_one('.moreless-content')
+                if ans_div and current_prob:
+                    answer_text = ans_div.get_text(separator=" ", strip=True)
+                    answer_text = re.sub(r'\s+', ' ', answer_text).strip()
+                    current_prob["answer"] = answer_text
+                    
+                    # 정답 구역 전체 방문 처리 (중복 방지)
+                    visited_tags.add(tag)
+                    for child in tag.find_all(): visited_tags.add(child)
+                    
+                    if current_prob['no'] == "20":
+                        is_parsing_finished = True
+                        problems.append(current_prob)
+                        current_prob = None
                     continue
 
-                # 2. 소스코드(colorscripter) 특수 처리
+            # [2] 텍스트 추출 (정답 박스가 아닐 때만 텍스트로 인식)
+            text = tag.get_text(" ", strip=True)
+            if not text and not tag.find('img'): continue
+
+            # [3] 신규 문제 번호 매칭
+            match = re.search(r'^(\d+)[\.\)]', text)
+            if match:
+                prob_no_val = int(match.group(1))
+                is_new = False
+                
+                if last_prob_no == 0 and prob_no_val == 1:
+                    is_new = True
+                # [핵심] 이전 문제의 정답을 찾았거나, 태그가 굵은 글씨일 때만 다음 번호로 인정
+                elif current_prob and prob_no_val == last_prob_no + 1:
+                    is_bold = tag.name in ['b', 'strong'] or tag.find(['b', 'strong'])
+                    # 정답이 이미 있거나, 굵은 글씨로 명확히 '문제 제목'임이 드러날 때
+                    if current_prob["answer"] or is_bold:
+                        is_new = True
+                
+                if is_new:
+                    if current_prob: problems.append(current_prob)
+                    last_prob_no = prob_no_val
+                    current_prob = {"no": str(last_prob_no), "question": text, "answer": "", "images": []}
+                    visited_tags.add(tag)
+                    continue
+
+            # [4] 나머지 데이터(소스코드, 표, 지문) 누적
+            if current_prob:
+                # 3.1 소스코드(colorscripter) 특수 처리
                 if 'colorscripter-code' in str(tag.get('class', [])) or tag.select_one('table.colorscripter-code-table'):
                     tds = tag.find_all('td')
                     if len(tds) >= 2:
@@ -139,24 +146,30 @@ class ExamCrawler:
                         visited_tags.add(child)
                     continue
 
-                # 3. 이미지 및 일반 텍스트 누적
+                # 3.2 이미지 처리
                 if tag.name == 'figure' or tag.find('img'):
                     self._extract_images(tag, year, exam_round, current_prob, downloaded_urls)
                     visited_tags.add(tag)
                     continue
                 
+                # 3.3 테이블 처리
                 if tag.name == 'table':
                     rows = [" | ".join([td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]) for tr in tag.find_all('tr')]
                     current_prob["question"] += "\n[표]\n" + "\n".join(rows)
                     visited_tags.add(tag)
                     for child in tag.find_all(): visited_tags.add(child)
-                else:
-                    clean_text = text.replace("더보기", "").strip()
-                    if clean_text and clean_text not in current_prob["question"]:
-                        # 이미 정답이 채워졌는데 또 텍스트가 들어오려고 하면 차단 (다음 문제를 기다림)
-                        if not current_prob["answer"]:
-                            current_prob["question"] += "\n" + clean_text
+                    continue
                 
+                # 3.4 일반 텍스트 누적
+                clean_text = text.replace("더보기", "").strip()
+                
+                # 텍스트가 존재하고 아직 문제 지문에 포함되지 않았을 때
+                if clean_text and clean_text not in current_prob["question"]:
+                    # [핵심] 정답을 아직 못 찾은 상태일 때만 지문으로 누적
+                    if not current_prob["answer"]:
+                        current_prob["question"] += "\n" + clean_text
+                
+                # 지문으로 쓰였든, 정답 이후라 버려졌든 이 태그는 처리가 끝났으므로 방문 처리
                 visited_tags.add(tag)
 
         # 마지막 문제가 20번이 아닐 경우를 대비해 루프 종료 후 남은 문제 추가
@@ -166,37 +179,29 @@ class ExamCrawler:
         return {"year": year, "round": exam_round, "url": url, "problems": problems}
 
     def _extract_images(self, tag, year, round_val, prob_dict, downloaded_urls):
-        # find_all 대신 현재 태그가 img인지 확인 + 자식들 중 img 탐색
         imgs = tag.find_all('img') if tag.name != 'img' else [tag]
-        
         for img in imgs:
             src = img.get('src') or img.get('data-src')
-            
-            # 필터링 및 중복 URL 체크
             if not src or not src.startswith('http') or 'tistory_admin' in src:
                 continue
-            
-            # [핵심] 이미 이 문제에서 처리한 URL이면 스킵
             if src in downloaded_urls:
                 continue
 
-            # 파일명 결정 (이제 URL이 다를 때만 인덱스가 증가함)
             img_idx = len(prob_dict["images"]) + 1
             fname = f"{year}_{round_val}_{prob_dict['no']}_{img_idx}.png"
-            
             path = self.download_image(src, fname)
             
             if path:
                 if path not in prob_dict["images"]:
                     prob_dict["images"].append(path)
-                downloaded_urls.add(src) # 처리 완료된 URL 등록
+                downloaded_urls.add(src)
 
     def run(self, urls: List[str]):
         for url in urls:
             print(f"🔎 파싱 중: {url}")
             data = self.parse_post(url)
             if data and data['problems']:
-                # 합격률 표 같은 쓰레기 데이터 제거 (문제가 너무 적거나 형식이 이상한 경우)
+                # 합격률 표 같은 쓰레기 데이터 제거
                 data['problems'] = [p for p in data['problems'] if len(p['question']) > 5]
                 
                 filename = f"exam_{data['year']}_{data['round']}.json"
@@ -206,25 +211,17 @@ class ExamCrawler:
             time.sleep(1)
 
 if __name__ == "__main__":
-    urls = ["https://chobopark.tistory.com/196", 
-            "https://chobopark.tistory.com/195", 
-            "https://chobopark.tistory.com/194", 
-            "https://chobopark.tistory.com/192", 
-            "https://chobopark.tistory.com/191", 
-            "https://chobopark.tistory.com/210", 
-            "https://chobopark.tistory.com/217", 
-            "https://chobopark.tistory.com/271", 
-            "https://chobopark.tistory.com/423", 
-            "https://chobopark.tistory.com/424", 
-            "https://chobopark.tistory.com/372", 
-            "https://chobopark.tistory.com/420", 
-            "https://chobopark.tistory.com/453", 
-            "https://chobopark.tistory.com/476", 
-            "https://chobopark.tistory.com/483", 
-            "https://chobopark.tistory.com/495", 
-            "https://chobopark.tistory.com/540", 
-            "https://chobopark.tistory.com/554", 
-            "https://chobopark.tistory.com/558"
-            ]
+    urls = [
+        "https://chobopark.tistory.com/196", "https://chobopark.tistory.com/195", 
+        "https://chobopark.tistory.com/194", "https://chobopark.tistory.com/192", 
+        "https://chobopark.tistory.com/191", "https://chobopark.tistory.com/210", 
+        "https://chobopark.tistory.com/217", "https://chobopark.tistory.com/271", 
+        "https://chobopark.tistory.com/423", "https://chobopark.tistory.com/424", 
+        "https://chobopark.tistory.com/372", "https://chobopark.tistory.com/420", 
+        "https://chobopark.tistory.com/453", "https://chobopark.tistory.com/476", 
+        "https://chobopark.tistory.com/483", "https://chobopark.tistory.com/495", 
+        "https://chobopark.tistory.com/540", "https://chobopark.tistory.com/554", 
+        "https://chobopark.tistory.com/558"
+    ]
     crawler = ExamCrawler()
     crawler.run(urls)
