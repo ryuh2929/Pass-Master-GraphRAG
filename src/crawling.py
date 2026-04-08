@@ -46,64 +46,86 @@ class ExamCrawler:
         
         # [핵심] 순차 탐색을 위해 모든 직계 및 주요 컨테이너 자식들을 평면화하여 탐색
         elements = content.find_all(['p', 'table', 'div', 'figure'], recursive=True)
-        
-        visited_tags = set() # 중복 처리 방지
+        visited_tags = set()
 
         for tag in elements:
             if tag in visited_tags or tag.find_parent('div', class_='moreless-content'):
                 continue
             
-            # 1. 문제 시작 감지 패턴 강화
-            # 단순히 '숫자.'으로 시작하는 게 아니라, <b> 태그 안에 있거나 줄의 맨 앞에 있을 때만 인정
             text = tag.get_text(strip=True)
+            if not text and not tag.find('img'): continue
+
+            # [핵심 수정] 신규 문제 판단 로직 강화
+            is_new_problem = False
             match = re.match(r'^(\d+)[\.\)]', text)
             
-            # "진짜" 문제 번호인지 확인 (정답 리스트인 "1. TTL" 등과 구분)
-            is_new_problem = False
             if match:
-                prob_no = int(match.group(1))
-                # 이전 문제 번호보다 크거나, 1번인 경우만 신규 문제로 인정 (간단한 검증)
-                if not current_prob or int(current_prob['no']) < prob_no or prob_no == 1:
-                    # 표 안에 있는 숫자는 문제 번호로 취급하지 않음
-                    if not tag.find_parent('table'):
+                prob_no = match.group(1)
+                # 1. 현재 수집 중인 문제가 없을 때만 신규 문제로 인정
+                # 2. 혹은 현재 수집 중인 문제가 있더라도, 번호 차이가 크거나 명확한 지문일 때 (선택적)
+                if current_prob is None:
+                    is_new_problem = True
+                else:
+                    # [예외] 만약 '더보기'를 못 만나서 닫히지 않은 상태에서 진짜 다음 번호(현재+1)가 나왔다면?
+                    if int(prob_no) == int(current_prob['no']) + 1:
+                        problems.append(current_prob)
                         is_new_problem = True
 
             if is_new_problem:
-                if current_prob: problems.append(current_prob)
                 current_prob = {
-                    "no": str(prob_no),
+                    "no": prob_no,
                     "question": text,
                     "answer": "",
                     "images": []
                 }
                 visited_tags.add(tag)
-                # 이미지 체크
                 self._extract_images(tag, year, exam_round, current_prob)
                 continue
 
             if current_prob:
-                # 2. 정답 구역(moreless) 처리
-                if tag.name == 'div' and ('moreLess' in tag.get('class', []) or 'btn-toggle-moreless' in str(tag)):
+                # 1. 정답 구역(moreless) 처리 -> 여기서 문제를 확실히 닫음
+                if 'moreLess' in tag.get('class', []) or tag.select_one('.btn-toggle-moreless'):
                     ans_div = tag.select_one('.moreless-content')
                     if ans_div:
-                        current_prob["answer"] = ans_div.get_text(separator=" ", strip=True).replace("더보기", "")
+                        current_prob["answer"] = ans_div.get_text(separator="\n", strip=True)
                         problems.append(current_prob)
-                        current_prob = None # 문제 종료
-                        # moreless 내부 태그들 방문 처리
-                        for child in tag.find_all(): visited_tags.add(child)
+                        current_prob = None # 문제를 닫음 (다음 숫자 패턴을 새 문제로 인식 가능하게 함)
                     continue
 
-                # 3. 본문 누적 (문제 지문)
-                if tag.name == 'table':
+                # 2. 소스코드(colorscripter) 특수 처리
+                if 'colorscripter-code' in str(tag.get('class', [])):
+                    # 줄번호가 섞이지 않게 코드 본문만 추출
+                    if 'colorscripter-code' in str(tag.get('class', [])) or tag.select_one('table.colorscripter-code-table'):
+                        # 테이블 구조에서 줄번호(첫 번째 td)를 제외하고 실제 코드(두 번째 td)만 가져옵니다.
+                        tds = tag.find_all('td')
+                        if len(tds) >= 2:
+                            # 두 번째 td가 실제 소스코드 영역입니다.
+                            code_content = tds[1].get_text(separator="\n", strip=True)
+                            current_prob["question"] += f"\n\n[Source Code]\n{code_content}"
+                        
+                        # 해당 태그와 그 자식들을 방문 처리하여 중복 방지
+                        visited_tags.add(tag)
+                        for child in tag.find_all():
+                            visited_tags.add(child)
+                        continue
+                    if not code_lines: # 대안: 테이블의 두 번째 td가 보통 코드
+                        tds = tag.find_all('td')
+                        if len(tds) >= 2:
+                            current_prob["question"] += "\n[Code]\n" + tds[1].get_text(separator="\n", strip=True)
+                    visited_tags.add(tag)
+                    continue
+
+                # 3. 이미지 및 일반 텍스트 누적
+                if tag.name == 'figure' or tag.find('img'):
+                    self._extract_images(tag, year, exam_round, current_prob)
+                
+                if tag.name == 'table' and 'colorscripter' not in str(tag.get('class')):
                     rows = [" | ".join([td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]) for tr in tag.find_all('tr')]
                     current_prob["question"] += "\n[표]\n" + "\n".join(rows)
-                elif tag.name == 'figure' or tag.find('img'):
-                    self._extract_images(tag, year, exam_round, current_prob)
                 else:
-                    if text and text not in current_prob["question"]:
-                        # "더보기" 글자 제거
-                        clean_text = text.replace("더보기", "").strip()
-                        if clean_text: current_prob["question"] += "\n" + clean_text
+                    clean_text = text.replace("더보기", "").strip()
+                    if clean_text and clean_text not in current_prob["question"]:
+                        current_prob["question"] += "\n" + clean_text
                 
                 visited_tags.add(tag)
 
