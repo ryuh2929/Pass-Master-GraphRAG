@@ -32,7 +32,7 @@ class ExamCrawler:
     def parse_post(self, url: str) -> Dict:
         """블로그 포스트 하나를 파싱하여 문제 리스트를 반환합니다."""
         res = requests.get(url, headers=self.headers)
-        soup = BeautifulSoup(res.text, 'html.parser')
+        soup = BeautifulSoup(res.text, 'lxml')
         
         # 제목에서 정보 추출
         title = soup.find('h1').get_text(strip=True)
