@@ -70,7 +70,7 @@ class ExamCrawler:
 
             # 신규 문제 판단 로직: last_prob_no를 활용한 엄격한 검증
             is_new_problem = False
-            match = re.match(r'^(\d+)[\.\)]', text)
+            match = re.search(r'^(\d+)[\.\)]', text)
             
             if match:
                 # 번호가 정확히 다음 번호이거나, 첫 시작(1번)인 경우만 인정
@@ -82,12 +82,14 @@ class ExamCrawler:
                 
                 # 2. 현재 수집 중인 문제가 있고, '정답(answer)'이 이미 채워진 상태에서 다음 번호가 온 경우
                 # 정답 내부의 '1. ON' 등은 last_prob_no보다 작으므로 여기서 걸러짐
-                elif current_prob and current_prob['answer'] and prob_no_val == last_prob_no + 1:
+                elif current_prob and current_prob['answer'] and prob_no_val > last_prob_no:
                     is_new_problem = True
                 
-                # 3. (예외 상황) 만약 정답 박스가 없는 문제일 수도 있으니, 
-                # 번호가 확실히 다음 번호이고 이전 텍스트가 충분히 길다면 교체 (선택적)
-                # 여기서는 '정답 박스 우선' 원칙을 지키기 위해 2번 조건만 사용해도 충분합니다.
+                # 3. [예외] 정답은 아직 못 찾았지만, 태그가 <b>나 <strong>으로 감싸진 '제목형' 번호인 경우
+                elif current_prob and not current_prob['answer'] and prob_no_val == last_prob_no + 1:
+                    is_bold = tag.name in ['b', 'strong'] or tag.find(['b', 'strong'])
+                    if is_bold:
+                        is_new_problem = True
 
             if is_new_problem:
                 # 새로운 문제를 만들기 전에 이전 문제 저장 (번호가 넘어갔으므로)
@@ -111,8 +113,7 @@ class ExamCrawler:
                     ans_div = tag.select_one('.moreless-content')
                     if ans_div:
                         # 정답 텍스트 추출 및 저장
-                        ans_text = ans_div.get_text(separator="\n", strip=True)
-                        current_prob["answer"] = ans_text
+                        current_prob["answer"] = ans_div.get_text(separator="\n", strip=True)
                         
                         # 중요: 정답 박스 내부의 모든 태그를 방문 처리하여 루프에서 중복 탐색 방지
                         visited_tags.add(tag)
@@ -141,6 +142,8 @@ class ExamCrawler:
                 # 3. 이미지 및 일반 텍스트 누적
                 if tag.name == 'figure' or tag.find('img'):
                     self._extract_images(tag, year, exam_round, current_prob, downloaded_urls)
+                    visited_tags.add(tag)
+                    continue
                 
                 if tag.name == 'table':
                     rows = [" | ".join([td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]) for tr in tag.find_all('tr')]
@@ -150,7 +153,9 @@ class ExamCrawler:
                 else:
                     clean_text = text.replace("더보기", "").strip()
                     if clean_text and clean_text not in current_prob["question"]:
-                        current_prob["question"] += "\n" + clean_text
+                        # 이미 정답이 채워졌는데 또 텍스트가 들어오려고 하면 차단 (다음 문제를 기다림)
+                        if not current_prob["answer"]:
+                            current_prob["question"] += "\n" + clean_text
                 
                 visited_tags.add(tag)
 
