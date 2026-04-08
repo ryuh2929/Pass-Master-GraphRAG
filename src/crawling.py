@@ -24,139 +24,117 @@ class ExamCrawler:
                 with open(path, 'wb') as f:
                     f.write(res.content)
                 return path
-        except Exception: pass
+        except: pass
         return ""
 
     def parse_post(self, url: str) -> Dict:
         res = requests.get(url, headers=self.headers)
         soup = BeautifulSoup(res.text, 'lxml')
         
-        # 1. 제목 추출 경로 다각화
-        title_text = ""
-        # 후보 1: post-cover 클래스 내부의 h1 (보내주신 HTML 구조)
-        title_tag = soup.select_one('.post-cover h1')
-        # 후보 2: 일반적인 h1
-        if not title_tag: title_tag = soup.find('h1')
-        # 후보 3: entry-content 내부의 h3 (본문 제목)
-        if not title_tag: title_tag = soup.find('h3', string=re.compile(r'복원 문제'))
-        
-        if title_tag:
-            title_text = title_tag.get_text(strip=True)
-            print(f"  📌 발견된 제목: {title_text}")
+        # 제목 및 메타정보 추출
+        title_tag = soup.select_one('.post-cover h1') or soup.find('h1')
+        title_text = title_tag.get_text(strip=True) if title_tag else ""
+        year = re.search(r'(\d{4})년', title_text)
+        round_val = re.search(r'(\d)회', title_text)
+        year, exam_round = (year.group(1) if year else "Unknown"), (round_val.group(1) if round_val else "Unknown")
 
-        # 정규식으로 년도와 회차 추출
-        year_match = re.search(r'(\d{4})년', title_text)
-        round_match = re.search(r'(\d)회', title_text)
-        
-        year = year_match.group(1) if year_match else "Unknown"
-        exam_round = round_match.group(1) if round_match else "Unknown"
-
-        # 제목에서 못 찾으면 URL 번호라도 활용 (덮어쓰기 방지)
-        if year == "Unknown":
-            post_id = url.split('/')[-1]
-            year = f"Post_{post_id}" 
-
-        # 2. 본문 영역 타겟팅
-        content = soup.select_one('.entry-content .contents_style') or soup.select_one('.entry-content')
+        content = soup.select_one('.entry-content')
         if not content: return {}
 
         problems = []
         current_prob = None
         
-        # 모든 p, table, div를 순서대로 탐색
-        # 단, 중첩된 구조를 피하기 위해 content 바로 아래의 요소들 위주로 탐색 로직 변경
-        elements = content.find_all(['p', 'table', 'div', 'figure'])
+        # [핵심] 순차 탐색을 위해 모든 직계 및 주요 컨테이너 자식들을 평면화하여 탐색
+        elements = content.find_all(['p', 'table', 'div', 'figure'], recursive=True)
         
-        for tag in elements:
-            # 이미 처리된 태그(예: moreless 내부의 p)는 스킵하기 위한 필터링
-            if tag.find_parent('div', class_='moreless-content'):
-                continue
+        visited_tags = set() # 중복 처리 방지
 
-            text = tag.get_text(strip=True)
+        for tag in elements:
+            if tag in visited_tags or tag.find_parent('div', class_='moreless-content'):
+                continue
             
-            # [패턴 강화] <b>1.</b> 또는 <span>1.</span> 등 숫자 시작 패턴 탐색
-            # 정규식: 숫자 + 마침표/괄호 + 공백(선택)
+            # 1. 문제 시작 감지 패턴 강화
+            # 단순히 '숫자.'으로 시작하는 게 아니라, <b> 태그 안에 있거나 줄의 맨 앞에 있을 때만 인정
+            text = tag.get_text(strip=True)
             match = re.match(r'^(\d+)[\.\)]', text)
             
+            # "진짜" 문제 번호인지 확인 (정답 리스트인 "1. TTL" 등과 구분)
+            is_new_problem = False
             if match:
-                if current_prob:
-                    problems.append(current_prob)
-                
-                prob_no = match.group(1)
+                prob_no = int(match.group(1))
+                # 이전 문제 번호보다 크거나, 1번인 경우만 신규 문제로 인정 (간단한 검증)
+                if not current_prob or int(current_prob['no']) < prob_no or prob_no == 1:
+                    # 표 안에 있는 숫자는 문제 번호로 취급하지 않음
+                    if not tag.find_parent('table'):
+                        is_new_problem = True
+
+            if is_new_problem:
+                if current_prob: problems.append(current_prob)
                 current_prob = {
-                    "no": prob_no,
-                    "question": tag.get_text(separator="\n", strip=True),
+                    "no": str(prob_no),
+                    "question": text,
                     "answer": "",
                     "images": []
                 }
-                # 문제 번호가 포함된 태그 내 이미지 체크
-                img = tag.find('img')
-                if img:
-                    self._process_image(img, year, exam_round, prob_no, current_prob)
+                visited_tags.add(tag)
+                # 이미지 체크
+                self._extract_images(tag, year, exam_round, current_prob)
                 continue
 
             if current_prob:
-                # 정답 구역(moreless) 처리
-                if tag.name == 'div' and ('moreLess' in tag.get('class', []) or 'moreless' in str(tag.get('class'))):
-                    ans_content = tag.select_one('.moreless-content')
-                    if ans_content:
-                        current_prob["answer"] = ans_content.get_text(strip=True)
+                # 2. 정답 구역(moreless) 처리
+                if tag.name == 'div' and ('moreLess' in tag.get('class', []) or 'btn-toggle-moreless' in str(tag)):
+                    ans_div = tag.select_one('.moreless-content')
+                    if ans_div:
+                        current_prob["answer"] = ans_div.get_text(separator=" ", strip=True).replace("더보기", "")
                         problems.append(current_prob)
-                        current_prob = None
+                        current_prob = None # 문제 종료
+                        # moreless 내부 태그들 방문 처리
+                        for child in tag.find_all(): visited_tags.add(child)
                     continue
 
-                # 이미지 처리 전용 메서드 호출
-                img = tag.find('img')
-                if img:
-                    self._process_image(img, year, exam_round, current_prob['no'], current_prob)
-
-                # 내용 누적 (표 또는 텍스트)
+                # 3. 본문 누적 (문제 지문)
                 if tag.name == 'table':
                     rows = [" | ".join([td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]) for tr in tag.find_all('tr')]
                     current_prob["question"] += "\n[표]\n" + "\n".join(rows)
-                elif text and tag.name != 'figure':
-                    # 너무 짧은 의미 없는 텍스트 방지 및 중복 방지
-                    if text not in current_prob["question"]:
-                        current_prob["question"] += "\n" + text
+                elif tag.name == 'figure' or tag.find('img'):
+                    self._extract_images(tag, year, exam_round, current_prob)
+                else:
+                    if text and text not in current_prob["question"]:
+                        # "더보기" 글자 제거
+                        clean_text = text.replace("더보기", "").strip()
+                        if clean_text: current_prob["question"] += "\n" + clean_text
+                
+                visited_tags.add(tag)
 
-        # 루프 종료 후 남은 마지막 문제 처리
-        if current_prob and current_prob not in problems:
-            problems.append(current_prob)
+        return {"year": year, "round": exam_round, "url": url, "problems": problems}
 
-        return {
-            "year": year,
-            "round": exam_round,
-            "url": url,
-            "problems": problems
-        }
-
-    def _process_image(self, img_tag, year, round_val, no, prob_dict):
-        """이미지 추출 및 다운로드 공통 로직"""
-        img_src = img_tag.get('src') or img_tag.get('data-src') or img_tag.get('data-url')
-        if img_src and 'img.png' in img_src: # 티스토리 이미지 엔진 주소 확인
-            img_name = f"{year}_{round_val}_{no}_{int(time.time())}.png"
-            path = self.download_image(img_src, img_name)
-            if path: prob_dict["images"].append(path)
+    def _extract_images(self, tag, year, round_val, prob_dict):
+        imgs = tag.find_all('img')
+        for img in imgs:
+            src = img.get('src') or img.get('data-src')
+            if src and src.startswith('http') and src not in [i.split('/')[-1] for i in prob_dict["images"]]:
+                # 이미지 중복 체크: 이미 같은 URL이나 파일명이 있으면 스킵
+                fname = f"{year}_{round_val}_{prob_dict['no']}_{hash(src)%10000}.png"
+                path = self.download_image(src, fname)
+                if path and path not in prob_dict["images"]:
+                    prob_dict["images"].append(path)
 
     def run(self, urls: List[str]):
         for url in urls:
             print(f"🔎 파싱 중: {url}")
             data = self.parse_post(url)
-            if data and data['year'] != "Unknown":
+            if data and data['problems']:
+                # 합격률 표 같은 쓰레기 데이터 제거 (문제가 너무 적거나 형식이 이상한 경우)
+                data['problems'] = [p for p in data['problems'] if len(p['question']) > 5]
+                
                 filename = f"exam_{data['year']}_{data['round']}.json"
-                save_path = os.path.join(self.output_dir, filename)
-                with open(save_path, 'w', encoding='utf-8') as f:
+                with open(os.path.join(self.output_dir, filename), 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
-                print(f"✅ 저장 완료: {save_path} ({len(data['problems'])}문제)")
-            else:
-                print(f"⚠️ 회차 정보를 찾을 수 없어 스킵합니다: {url}")
+                print(f"✅ 저장 완료: {filename} ({len(data['problems'])}문제)")
             time.sleep(1)
 
 if __name__ == "__main__":
-    exam_urls = [
-        "https://chobopark.tistory.com/554",
-        "https://chobopark.tistory.com/540",
-        # ... 리스트 생략
-    ]
+    urls = ["https://chobopark.tistory.com/554", "https://chobopark.tistory.com/540"]
     crawler = ExamCrawler()
-    crawler.run(exam_urls)
+    crawler.run(urls)
