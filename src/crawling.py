@@ -174,6 +174,25 @@ class ExamCrawler:
             time.sleep(1)
 
 if __name__ == "__main__":
-    urls = ["https://chobopark.tistory.com/554", "https://chobopark.tistory.com/540"]
+    urls = ["https://chobopark.tistory.com/196", 
+            "https://chobopark.tistory.com/195", 
+            "https://chobopark.tistory.com/194", 
+            "https://chobopark.tistory.com/192", 
+            "https://chobopark.tistory.com/191", 
+            "https://chobopark.tistory.com/210", 
+            "https://chobopark.tistory.com/217", 
+            "https://chobopark.tistory.com/271", 
+            "https://chobopark.tistory.com/423", 
+            "https://chobopark.tistory.com/424", 
+            "https://chobopark.tistory.com/372", 
+            "https://chobopark.tistory.com/420", 
+            "https://chobopark.tistory.com/453", 
+            "https://chobopark.tistory.com/476", 
+            "https://chobopark.tistory.com/483", 
+            "https://chobopark.tistory.com/495", 
+            "https://chobopark.tistory.com/540", 
+            "https://chobopark.tistory.com/554", 
+            "https://chobopark.tistory.com/558"
+            ]
     crawler = ExamCrawler()
     crawler.run(urls)
