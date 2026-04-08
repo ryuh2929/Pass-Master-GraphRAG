@@ -54,8 +54,13 @@ class ExamCrawler:
         elements = content.find_all(['p', 'table', 'div', 'figure'], recursive=True)
         visited_tags = set()
         downloaded_urls = set()
+        is_parsing_finished = False
 
         for tag in elements:
+            # 파싱이 종료되었다면 더 이상 읽지 않음
+            if is_parsing_finished:
+                break
+
             if tag in visited_tags or tag.find_parent('div', class_='moreless-content'):
                 continue
             
@@ -96,6 +101,11 @@ class ExamCrawler:
                     if ans_div:
                         current_prob["answer"] = ans_div.get_text(separator="\n", strip=True)
                         problems.append(current_prob)
+
+                        # 20번 정답을 찾았다면 종료 준비
+                        if current_prob['no'] == "20":
+                            is_parsing_finished = True
+
                         current_prob = None # 문제를 닫음 (다음 숫자 패턴을 새 문제로 인식 가능하게 함)
                         downloaded_urls = set() # 다음 문제에서 이미지 중복 방지 위해 초기화
                     continue
