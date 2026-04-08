@@ -17,7 +17,6 @@ class ExamCrawler:
         os.makedirs(self.image_dir, exist_ok=True)
 
     def download_image(self, img_url: str, filename: str) -> str:
-        """이미지를 다운로드하고 로컬 경로를 반환합니다."""
         try:
             res = requests.get(img_url, headers=self.headers, timeout=10)
             if res.status_code == 200:
@@ -25,74 +24,101 @@ class ExamCrawler:
                 with open(path, 'wb') as f:
                     f.write(res.content)
                 return path
-        except Exception as e:
-            print(f"  ⚠️ 이미지 다운로드 실패: {e}")
+        except Exception: pass
         return ""
 
     def parse_post(self, url: str) -> Dict:
-        """블로그 포스트 하나를 파싱하여 문제 리스트를 반환합니다."""
         res = requests.get(url, headers=self.headers)
         soup = BeautifulSoup(res.text, 'lxml')
         
-        # 제목에서 정보 추출
-        title = soup.find('h1').get_text(strip=True)
-        year = re.search(r'(\d{4})년', title).group(1) if re.search(r'(\d{4})년', title) else "Unknown"
-        exam_round = re.search(r'(\d)회', title).group(1) if re.search(r'(\d)회', title) else "Unknown"
+        # 1. 제목 추출 경로 다각화
+        title_text = ""
+        # 후보 1: post-cover 클래스 내부의 h1 (보내주신 HTML 구조)
+        title_tag = soup.select_one('.post-cover h1')
+        # 후보 2: 일반적인 h1
+        if not title_tag: title_tag = soup.find('h1')
+        # 후보 3: entry-content 내부의 h3 (본문 제목)
+        if not title_tag: title_tag = soup.find('h3', string=re.compile(r'복원 문제'))
         
-        content = soup.select_one('.entry-content')
-        if not content:
-            return {}
+        if title_tag:
+            title_text = title_tag.get_text(strip=True)
+            print(f"  📌 발견된 제목: {title_text}")
+
+        # 정규식으로 년도와 회차 추출
+        year_match = re.search(r'(\d{4})년', title_text)
+        round_match = re.search(r'(\d)회', title_text)
+        
+        year = year_match.group(1) if year_match else "Unknown"
+        exam_round = round_match.group(1) if round_match else "Unknown"
+
+        # 제목에서 못 찾으면 URL 번호라도 활용 (덮어쓰기 방지)
+        if year == "Unknown":
+            post_id = url.split('/')[-1]
+            year = f"Post_{post_id}" 
+
+        # 2. 본문 영역 타겟팅
+        content = soup.select_one('.entry-content .contents_style') or soup.select_one('.entry-content')
+        if not content: return {}
 
         problems = []
+        current_prob = None
         
-        # 문제 번호(<b>태그)를 기준으로 파싱
-        # 블로그마다 구조가 조금씩 다를 수 있어 모든 b 태그를 탐색
-        b_tags = content.find_all('b')
-        
-        for b in b_tags:
-            text = b.get_text(strip=True)
-            # '1.' 또는 '1) ' 형태의 문제 번호 탐색
-            if re.match(r'^\d+[\.\)]', text):
-                prob_no = re.sub(r'[^0-9]', '', text.split('.')[0])
+        # 본문 내의 모든 직계 자식 태그를 순회
+        for tag in content.find_all(['p', 'table', 'div', 'figure'], recursive=False):
+            text = tag.get_text(strip=True)
+            
+            # 문제 시작 감지 (예: "1. ", "11. ")
+            # p 태그 내부에 b 태그가 있거나, p 태그 자체가 숫자로 시작하는 경우
+            is_start = False
+            first_text = tag.get_text()
+            match = re.match(r'^\s*(\d+)[\.\)]', first_text)
+            
+            if match:
+                # 이전 문제가 있었다면 정답 없이 종료된 것이므로 저장(있을 경우)
+                if current_prob:
+                    problems.append(current_prob)
                 
-                # 지문 수집: b태그 이후 다음 b태그가 나오기 전까지의 p, img 태그 수집
-                question_text = text
-                images = []
-                
-                curr = b.parent if b.parent.name == 'p' else b
-                while curr and curr.next_sibling:
-                    curr = curr.next_sibling
-                    if curr.name == 'b' or (curr.find and curr.find('b')): break
-                    
-                    if curr.name == 'p':
-                        # 이미지 확인
-                        img = curr.find('img')
-                        if img:
-                            img_src = img.get('src')
-                            img_name = f"{year}_{exam_round}_{prob_no}.png"
-                            local_path = self.download_image(img_src, img_name)
-                            if local_path: images.append(local_path)
-                        
-                        # 텍스트 추가 (더보기 박스 제외)
-                        if 'moreless' not in str(curr.get('class', [])):
-                            question_text += "\n" + curr.get_text(strip=True)
-                
-                # 정답 찾기: 현재 위치 근처의 moreless-content 찾기
-                answer = ""
-                ans_div = curr.find_parent().find('div', class_='moreless-content') if curr.find_parent() else None
-                if not ans_div: # 구조가 다를 경우 주변 탐색
-                    ans_div = b.find_all_next('div', class_='moreless-content', limit=1)
-                    if ans_div: ans_div = ans_div[0]
-                
-                if ans_div:
-                    answer = ans_div.get_text(strip=True)
-
-                problems.append({
+                prob_no = match.group(1)
+                current_prob = {
                     "no": prob_no,
-                    "question": question_text.strip(),
-                    "answer": answer,
-                    "images": images
-                })
+                    "question": first_text.strip(),
+                    "answer": "",
+                    "images": []
+                }
+                is_start = True
+            
+            if current_prob and not is_start:
+                # 정답 구역(moreless)을 만났을 때
+                if tag.name == 'div' and 'moreLess' in tag.get('class', []):
+                    ans_content = tag.select_one('.moreless-content')
+                    if ans_content:
+                        current_prob["answer"] = ans_content.get_text(strip=True)
+                    
+                    # 정답을 찾았으므로 한 문제 완성
+                    problems.append(current_prob)
+                    current_prob = None
+                    continue
+
+                # 이미지 추출
+                img_tag = tag.find('img')
+                if img_tag:
+                    img_src = img_tag.get('src') or img_tag.get('data-src')
+                    if img_src:
+                        img_name = f"{year}_{exam_round}_{current_prob['no']}.png"
+                        local_path = self.download_image(img_src, img_name)
+                        if local_path: current_prob["images"].append(local_path)
+
+                # 표(table) 또는 일반 텍스트 추가
+                if tag.name == 'table':
+                    # 표는 텍스트 형태로 변환하여 질문에 추가
+                    rows = []
+                    for tr in tag.find_all('tr'):
+                        cells = [td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]
+                        rows.append(" | ".join(cells))
+                    current_prob["question"] += "\n[표]\n" + "\n".join(rows)
+                else:
+                    if text:
+                        current_prob["question"] += "\n" + text
 
         return {
             "year": year,
@@ -105,19 +131,21 @@ class ExamCrawler:
         for url in urls:
             print(f"🔎 파싱 중: {url}")
             data = self.parse_post(url)
-            if data and data['problems']:
+            if data and data['year'] != "Unknown":
                 filename = f"exam_{data['year']}_{data['round']}.json"
                 save_path = os.path.join(self.output_dir, filename)
                 with open(save_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
                 print(f"✅ 저장 완료: {save_path} ({len(data['problems'])}문제)")
+            else:
+                print(f"⚠️ 회차 정보를 찾을 수 없어 스킵합니다: {url}")
             time.sleep(1)
 
 if __name__ == "__main__":
     exam_urls = [
-        "https://chobopark.tistory.com/540",
         "https://chobopark.tistory.com/554",
-        # ... 나머지 URL 리스트
+        "https://chobopark.tistory.com/540",
+        # ... 리스트 생략
     ]
     crawler = ExamCrawler()
     crawler.run(exam_urls)
