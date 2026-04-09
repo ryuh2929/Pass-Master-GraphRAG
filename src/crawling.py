@@ -58,12 +58,14 @@ class ExamCrawler:
         downloaded_urls = set()
         is_parsing_finished = False
 
+        more_blocks = content.find_all('div', attrs={'data-ke-type': 'moreLess'})
+
         for tag in elements:
             if is_parsing_finished:
                 break
 
             # 이미 처리된 태그나 정답 박스 안의 내용은 지문으로 읽지 않음
-            if tag in visited_tags or tag.find_parent('div', class_='moreless-content'):
+            if tag in visited_tags:
                 continue
             
             text = tag.get_text(strip=True)
@@ -109,24 +111,51 @@ class ExamCrawler:
                 continue
 
             if current_prob:
-                # 1. 정답 구역(moreless) 처리
-                if tag.get('data-ke-type') == 'moreLess' or 'moreLess' in tag.get('class', []) or tag.select_one('.btn-toggle-moreless'):
-                    ans_div = tag.select_one('.moreless-content')
-                    if ans_div:
-                        # 정답 텍스트 추출 및 저장
-                        current_prob["answer"] = ans_div.get_text(separator="\n", strip=True)
+                # # 1. 정답 구역(moreless) 처리
+                # is_answer_zone = 'moreless-content' in tag.get('class', []) or tag.find(class_='moreless-content')
+
+                # if is_answer_zone:
+                #     # 정답 구역이라면 내부의 텍스트만 추출
+                #     answer_div = tag if 'moreless-content' in tag.get('class', []) else tag.find(class_='moreless-content')
+                #     ans_text = answer_div.get_text(strip=True)
+
+                #     if ans_text:
+                #         current_prob["answer"] = ans_text
+
+                # if 'moreLess' in tag.get('class', []) or tag.get('data-ke-type') == 'moreLess' or tag.select_one('.btn-toggle-moreless'):
+                #     ans_div = tag.select_one('.moreless-content')
+                #     if ans_div:
+                #         # 정답 텍스트 추출 및 저장
+                #         current_prob["answer"] = ans_div.get_text(separator="\n", strip=True)
                         
-                        # 중요: 정답 박스 내부의 모든 태그를 방문 처리하여 루프에서 중복 탐색 방지
-                        visited_tags.add(tag)
-                        for child in tag.find_all():
-                            visited_tags.add(child)
+                #         # 중요: 정답 박스 내부의 모든 태그를 방문 처리하여 루프에서 중복 탐색 방지
+                #         visited_tags.add(tag)
+                #         for child in tag.find_all():
+                #             visited_tags.add(child)
                             
-                        # 20번 정답을 다 읽었다면 플래그 세팅
-                        if current_prob['no'] == "20":
-                            is_parsing_finished = True
-                            problems.append(current_prob)
-                            current_prob = None
-                    continue
+                #         # 20번 정답을 다 읽었다면 플래그 세팅
+                #         if current_prob['no'] == "20":
+                #             is_parsing_finished = True
+                #             problems.append(current_prob)
+                #             current_prob = None
+                #     continue
+
+                if more_blocks:
+                    if tag.get('data-ke-type') == 'moreLess' or 'moreLess' in tag.get('class', []):
+                        # 내부에서 실제 정답 텍스트가 있는 곳을 찾음
+                        content_div = tag.find(class_='moreless-content')
+                        if content_div:
+                            current_prob["answer"] = content_div.get_text(strip=True)
+                            
+                            # 중요: 이 구역 안의 모든 자식 태그들을 방문 처리해서 지문에 안 섞이게 함
+                            for child in tag.find_all(recursive=True):
+                                visited_tags.add(child)
+                            
+                            if current_prob['no'] == "20":
+                                is_parsing_finished = True
+                                problems.append(current_prob)
+                                current_prob = None
+                        continue # 정답 처리 끝났으니 다음 태그로 이동
 
                 # 2. 소스코드(colorscripter) 특수 처리
                 if 'colorscripter-code' in str(tag.get('class', [])) or tag.select_one('table.colorscripter-code-table'):
