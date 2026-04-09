@@ -110,7 +110,7 @@ class ExamCrawler:
 
             if current_prob:
                 # 1. 정답 구역(moreless) 처리
-                if 'moreLess' in tag.get('class', []) or tag.select_one('.btn-toggle-moreless'):
+                if tag.get('data-ke-type') == 'moreLess' or 'moreLess' in tag.get('class', []) or tag.select_one('.btn-toggle-moreless'):
                     ans_div = tag.select_one('.moreless-content')
                     if ans_div:
                         # 정답 텍스트 추출 및 저장
