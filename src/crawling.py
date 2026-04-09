@@ -203,7 +203,7 @@ class ExamCrawler:
                 with open(os.path.join(self.output_dir, filename), 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
                 print(f"✅ 저장 완료: {filename} ({len(data['problems'])}문제)")
-            time.sleep(1)
+            time.sleep(0.5)
 
 if __name__ == "__main__":
     urls = ["https://chobopark.tistory.com/196", 
