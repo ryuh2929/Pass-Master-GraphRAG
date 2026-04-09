@@ -141,7 +141,7 @@ class ExamCrawler:
                 #     continue
 
                 if more_blocks:
-                    if tag.get('data-ke-type') == 'moreLess' or 'moreLess' in tag.get('class', []):
+                    if tag.get('data-ke-type') == 'moreLess' or 'moreLess' in tag.get('class', []) or tag.select_one('.btn-toggle-moreless'):
                         # 내부에서 실제 정답 텍스트가 있는 곳을 찾음
                         content_div = tag.find(class_='moreless-content')
                         if content_div:
