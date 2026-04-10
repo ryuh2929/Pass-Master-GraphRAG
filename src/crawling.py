@@ -111,34 +111,6 @@ class ExamCrawler:
                 continue
 
             if current_prob:
-                # # 1. 정답 구역(moreless) 처리
-                # is_answer_zone = 'moreless-content' in tag.get('class', []) or tag.find(class_='moreless-content')
-
-                # if is_answer_zone:
-                #     # 정답 구역이라면 내부의 텍스트만 추출
-                #     answer_div = tag if 'moreless-content' in tag.get('class', []) else tag.find(class_='moreless-content')
-                #     ans_text = answer_div.get_text(strip=True)
-
-                #     if ans_text:
-                #         current_prob["answer"] = ans_text
-
-                # if 'moreLess' in tag.get('class', []) or tag.get('data-ke-type') == 'moreLess' or tag.select_one('.btn-toggle-moreless'):
-                #     ans_div = tag.select_one('.moreless-content')
-                #     if ans_div:
-                #         # 정답 텍스트 추출 및 저장
-                #         current_prob["answer"] = ans_div.get_text(separator="\n", strip=True)
-                        
-                #         # 중요: 정답 박스 내부의 모든 태그를 방문 처리하여 루프에서 중복 탐색 방지
-                #         visited_tags.add(tag)
-                #         for child in tag.find_all():
-                #             visited_tags.add(child)
-                            
-                #         # 20번 정답을 다 읽었다면 플래그 세팅
-                #         if current_prob['no'] == "20":
-                #             is_parsing_finished = True
-                #             problems.append(current_prob)
-                #             current_prob = None
-                #     continue
 
                 if more_blocks:
                     if tag.get('data-ke-type') == 'moreLess' or 'moreLess' in tag.get('class', []) or tag.select_one('.btn-toggle-moreless'):
@@ -150,6 +122,8 @@ class ExamCrawler:
                             # 중요: 이 구역 안의 모든 자식 태그들을 방문 처리해서 지문에 안 섞이게 함
                             # for child in tag.find_all(recursive=True):
                             #     visited_tags.add(child)
+                            # Note: 중첩된 HTML 구조(코드 블록 내 정답 포함 등)에서 
+                            # 데이터 누락을 방지하기 위해 중복 방문을 허용함.
                             
                             if current_prob['no'] == "20":
                                 is_parsing_finished = True
