@@ -148,7 +148,7 @@ class ExamCrawler:
                             current_prob["answer"] = content_div.get_text(strip=True)
                             
                             # 중요: 이 구역 안의 모든 자식 태그들을 방문 처리해서 지문에 안 섞이게 함
-                            for child in tag.find_all(recursive=True):
+                            for child in tag.find_all(recursive=True): 
                                 visited_tags.add(child)
                             
                             if current_prob['no'] == "20":
