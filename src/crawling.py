@@ -85,7 +85,7 @@ class ExamCrawler:
                 
                 # 2. 현재 수집 중인 문제가 있고, '정답(answer)'이 이미 채워진 상태에서 다음 번호가 온 경우
                 # 정답 내부의 '1. ON' 등은 last_prob_no보다 작으므로 여기서 걸러짐
-                elif current_prob and current_prob['answer'] and prob_no_val > last_prob_no:
+                elif current_prob and current_prob['answer'] and prob_no_val == last_prob_no + 1:
                     is_new_problem = True
                 
                 # 3. [예외] 정답은 아직 못 찾았지만, 태그가 <b>나 <strong>으로 감싸진 '제목형' 번호인 경우
@@ -148,8 +148,8 @@ class ExamCrawler:
                             current_prob["answer"] = content_div.get_text(strip=True)
                             
                             # 중요: 이 구역 안의 모든 자식 태그들을 방문 처리해서 지문에 안 섞이게 함
-                            for child in tag.find_all(recursive=True):
-                                visited_tags.add(child)
+                            # for child in tag.find_all(recursive=True):
+                            #     visited_tags.add(child)
                             
                             if current_prob['no'] == "20":
                                 is_parsing_finished = True
