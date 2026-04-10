@@ -37,6 +37,16 @@ def run_integrity_check():
                     issues.append(f"{no}번 정답 누락")
                 if not str(prob.get('question', '')).strip():
                     issues.append(f"{no}번 지문 누락")
+                                    
+                # 질문의 마지막 부분이 정답과 완전히 동일하게 끝나는지 체크 (중복 방지)
+                clean_q = prob.get('question', '').replace("\n", "").replace(" ", "")
+                clean_a = prob.get('answer', '').replace("\n", "").replace(" ", "")
+                
+                if len(clean_a) > 3: # 너무 짧은 정답 제외
+                        if clean_a in clean_q[-len(clean_a)-10:]: # 질문 끝에서 정답이 포함되어 있는지 체크
+                            issues.append( 
+                            f"{no}번 질문 끝에 정답이 중복 포함된 것으로 의심됩니다."
+                        )
 
             if not issues:
                 print(f"✅ {filename.ljust(20)} | 통과 (20문항)")
