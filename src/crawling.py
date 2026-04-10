@@ -37,6 +37,16 @@ class ExamCrawler:
     def parse_post(self, url: str) -> Dict:
         res = requests.get(url, headers=self.headers)
         soup = BeautifulSoup(res.text, 'lxml')
+
+        # 1. 실기 날짜 매핑 데이터
+        practical_date_map = {
+            "2020-1": "20.5", "2020-2": "20.7", "2020-3": "20.10", "2020-4": "20.11",
+            "2021-1": "21.4", "2021-2": "21.7", "2021-3": "21.10",
+            "2022-1": "22.5", "2022-2": "22.7", "2022-3": "22.10",
+            "2023-1": "23.4", "2023-2": "23.7", "2023-3": "23.10",
+            "2024-1": "24.4", "2024-2": "24.7", "2024-3": "24.10",
+            "2025-1": "25.4", "2025-2": "25.7", "2025-3": "25.11"
+        }
         
         # 제목 및 메타정보 추출
         title_tag = soup.select_one('.post-cover h1') or soup.find('h1')
@@ -45,7 +55,7 @@ class ExamCrawler:
         round_match = re.search(r'(\d)회', title_text)
         year = year_match.group(1) if year_match else "Unknown"
         exam_round = round_match.group(1) if round_match else "Unknown"
-
+        practical_dates = practical_date_map.get(f"{year}-{exam_round}", "Unknown")
         content = soup.select_one('.entry-content')
         if not content: return {}
 
@@ -167,7 +177,7 @@ class ExamCrawler:
         if current_prob and current_prob not in problems:
             problems.append(current_prob)
 
-        return {"year": year, "round": exam_round, "url": url, "problems": problems}
+        return {"year": year, "round": exam_round, "practical_dates": practical_dates, "url": url, "problems": problems}
 
     def _extract_images(self, tag, year, round_val, prob_dict, downloaded_urls):
         # find_all 대신 현재 태그가 img인지 확인 + 자식들 중 img 탐색
