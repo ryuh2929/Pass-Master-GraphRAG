@@ -10,6 +10,3 @@ dependencies = [
     "pdfplumber>=0.11.9",
     "requests>=2.33.1",
 ]
-
-[tool.uv.scripts]
-export = "uv export --format requirements-txt --output-file requirements.txt"
