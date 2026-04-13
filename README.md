@@ -5,6 +5,8 @@ uv sync
 ### pip 사용자
 pip install -r requirements.txt
 
+---
+
 ### Docker 명령어
 시작
 ```
@@ -27,6 +29,8 @@ docker-compose logs
 # 재시작
 docker-compose restart
 ```
+
+---
 
 ## 📝 트러블슈팅
 #### **"중첩 구조의 데이터 손실 방지"**
