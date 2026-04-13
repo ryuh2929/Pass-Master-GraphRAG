@@ -8,11 +8,16 @@ load_dotenv()
 
 class GraphDataManager:
     def __init__(self):
-        self.graph = Neo4jGraph(
-            url=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-            username=os.getenv("NEO4J_USERNAME", "neo4j"),
-            password=os.getenv("NEO4J_PASSWORD")
-        )
+        try:
+            self.graph = Neo4jGraph(
+                url=os.getenv("NEO4J_URI"),
+                username=os.getenv("NEO4J_USER"),
+                password=os.getenv("NEO4J_PASSWORD")
+            )
+            print("✅ Neo4j 연결 성공")
+        except Exception as e:
+            print(f"❌ Neo4j 연결 실패: {e}")
+            raise e
 
     def load_exam_data(self, json_path: str):
         """기출 JSON 구조에 맞춘 적재 로직"""
