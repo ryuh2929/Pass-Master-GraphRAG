@@ -66,7 +66,7 @@ class GraphDataManager:
         CALL db.index.vector.queryNodes('concept_index', 5, q.embedding) 
         YIELD node AS c, score
         WHERE score >= $threshold
-          AND e.practical_dates IN c.exam_dates  // 날짜 검증 로직
+          AND e.practical_dates IN c.practical_dates  // 날짜 검증 로직
         MERGE (q)-[r:VERIFIED_MENTIONS]->(c)
         SET r.similarity_score = score
         RETURN count(r) as link_count
@@ -113,7 +113,8 @@ class GraphDataManager:
         SET c.title = chunk.metadata.title,
             c.document = chunk.document,
             c.importance = chunk.metadata.importance,
-            c.exam_dates = chunk.metadata.exam_dates
+            c.exam_dates = chunk.metadata.exam_dates,
+            c.practical_dates = chunk.metadata.practical_dates
         
         // 3. Chapter와 Concept 연결 (소속 관계)
         MERGE (c)-[:BELONGS_TO]->(ch)
