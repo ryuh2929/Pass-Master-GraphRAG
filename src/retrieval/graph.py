@@ -103,13 +103,23 @@ class GraphDataManager:
                 self.graph.query("MATCH (c:Concept {id: $id}) CALL db.create.setNodeVectorProperty(c, 'embedding', $vector)", 
                                  {"id": rec['id'], "vector": vector})
         
-        # Question 노드 임베딩
-        questions = self.graph.query("MATCH (q:Question) WHERE q.embedding IS NULL RETURN q.id as id, q.question as text")
+        # Question 노드: 본문과 정답을 결합하여 정보량 증대
+        questions = self.graph.query("""
+            MATCH (q:Question) 
+            WHERE q.embedding IS NULL 
+            RETURN q.id as id, q.question as question, q.answer as answer
+        """)
+        
         for rec in questions:
-            vector = self.get_embedding(rec['text'])
+            # 문제와 정답을 합쳐서 문맥을 풍부하게 만듦
+            combined_text = f"문제: {rec['question']} / 정답: {rec['answer']}"
+            vector = self.get_embedding(combined_text)
+            
             if vector:
-                self.graph.query("MATCH (q:Question {id: $id}) CALL db.create.setNodeVectorProperty(q, 'embedding', $vector)", 
-                                 {"id": rec['id'], "vector": vector})
+                self.graph.query("""
+                    MATCH (q:Question {id: $id}) 
+                    CALL db.create.setNodeVectorProperty(q, 'embedding', $vector)
+                """, {"id": rec['id'], "vector": vector})
         print("✅ 모든 노드 벡터화 완료")
 
     def create_vector_index(self):
