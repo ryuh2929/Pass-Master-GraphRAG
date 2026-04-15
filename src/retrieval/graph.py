@@ -66,7 +66,7 @@ class GraphDataManager:
         // 4. 기존 Exam과의 관계 형성 (실기 날짜 기반)
         WITH c, chunk
         UNWIND chunk.metadata.practical_dates AS p_date  // 필기가 아닌 '실기' 날짜 리스트를 풉니다.
-        MATCH (e:Exam {practical_dates: p_date})        // Exam 노드의 날짜와 정확히 매칭
+        MATCH (e:Exam) WHERE trim(e.practical_dates) = trim(p_date)        // Exam 노드의 날짜와 정확히 매칭
         MERGE (c)-[:APPEARED_IN_PRACTICAL]->(e)         // 관계명도 구체화하면 분석이 더 쉬워집니다.
         """
         try:
