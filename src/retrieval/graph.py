@@ -1,6 +1,7 @@
 import os
 import json
 import glob
+import requests
 from dotenv import load_dotenv
 from langchain_neo4j import Neo4jGraph
 
@@ -14,10 +15,64 @@ class GraphDataManager:
                 username=os.getenv("NEO4J_USER"),
                 password=os.getenv("NEO4J_PASSWORD")
             )
-            print("✅ Neo4j 연결 성공")
+            self.tei_url = "http://localhost:8080/embed"
+            print("✅ Neo4j & TEI 연동 준비 완료")
         except Exception as e:
-            print(f"❌ Neo4j 연결 실패: {e}")
+            print(f"❌ 초기화 실패: {e}")
             raise e
+
+    def get_embedding(self, text: str):
+        """TEI 컨테이너를 호출하여 bge-m3 임베딩을 가져옵니다."""
+        try:
+            response = requests.post(self.tei_url, json={"inputs": text}, timeout=10)
+            return response.json()[0]
+        except Exception as e:
+            print(f"Embedding Error: {e}")
+            return None
+
+    def embed_nodes(self):
+        """Question과 Concept 노드에 임베딩을 추가합니다."""
+        # Concept 노드 임베딩
+        concepts = self.graph.query("MATCH (c:Concept) WHERE c.embedding IS NULL RETURN c.id as id, c.document as text")
+        for rec in concepts:
+            vector = self.get_embedding(rec['text'])
+            if vector:
+                self.graph.query("MATCH (c:Concept {id: $id}) CALL db.create.setNodeVectorProperty(c, 'embedding', $vector)", 
+                                 {"id": rec['id'], "vector": vector})
+        
+        # Question 노드 임베딩
+        questions = self.graph.query("MATCH (q:Question) WHERE q.embedding IS NULL RETURN q.id as id, q.question as text")
+        for rec in questions:
+            vector = self.get_embedding(rec['text'])
+            if vector:
+                self.graph.query("MATCH (q:Question {id: $id}) CALL db.create.setNodeVectorProperty(q, 'embedding', $vector)", 
+                                 {"id": rec['id'], "vector": vector})
+        print("✅ 모든 노드 벡터화 완료")
+
+    def create_vector_index(self):
+        """벡터 조회를 위한 인덱스 생성 (bge-m3: 1024차원)"""
+        self.graph.query("""
+        CREATE VECTOR INDEX concept_index IF NOT EXISTS
+        FOR (c:Concept) ON (c.embedding)
+        OPTIONS {indexConfig: { `vector.dimensions`: 1024, `vector.similarity_function`: 'cosine' }}
+        """)
+
+    def link_with_semantic_verification(self, threshold=0.8):
+        """의미 유사도 확인 후 날짜 데이터로 검증하여 연결"""
+        # 1. 벡터 유사도로 후보 탐색
+        # 2. 문제(Question)가 속한 시험(Exam)의 날짜가 개념(Concept)의 출제 날짜에 있는지 검증
+        query = """
+        MATCH (q:Question)-[:HAS_QUESTION]-(e:Exam)
+        CALL db.index.vector.queryNodes('concept_index', 5, q.embedding) 
+        YIELD node AS c, score
+        WHERE score >= $threshold
+          AND e.practical_dates IN c.exam_dates  // 날짜 검증 로직
+        MERGE (q)-[r:VERIFIED_MENTIONS]->(c)
+        SET r.similarity_score = score
+        RETURN count(r) as link_count
+        """
+        result = self.graph.query(query, {"threshold": threshold})
+        print(f"✅ 검증된 의미적 연결 {result[0]['link_count']}개 생성 완료")
 
     def load_exam_data(self, json_path: str):
         """기출 JSON 구조에 맞춘 적재 로직"""
@@ -89,3 +144,10 @@ if __name__ == "__main__":
     
     # 2. 요약본 넣기
     manager.load_summary_chunks("data/processed/processed_chunks.json")
+
+    # 3. 임베딩 및 인덱스 생성
+    manager.embed_nodes()
+    manager.create_vector_index()
+    
+    # 4. 딥러닝(임베딩) + 날짜 검증 기반 연결
+    manager.link_with_semantic_verification(threshold=0.75)
