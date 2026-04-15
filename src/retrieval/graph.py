@@ -68,12 +68,20 @@ class GraphDataManager:
         # 2. 문제(Question)가 속한 시험(Exam)의 날짜가 개념(Concept)의 출제 날짜에 있는지 검증
         query = """
         MATCH (q:Question)-[:HAS_QUESTION]-(e:Exam)
-        CALL db.index.vector.queryNodes('concept_index', 5, q.embedding) 
+        CALL db.index.vector.queryNodes('concept_index', 20, q.embedding) 
         YIELD node AS c, score
         WHERE score >= $threshold
-          AND e.practical_dates IN c.practical_dates  // 날짜 검증 로직
-        MERGE (q)-[r:VERIFIED_MENTIONS]->(c)
-        SET r.similarity_score = score
+          AND any(d IN c.practical_dates WHERE trim(d) = trim(e.practical_dates))  // 날짜 검증 로직
+        
+        // 문제(q)별로 가장 점수가 높은 개념(c) 하나만 남기기
+        WITH q, c, score
+        ORDER BY q.id, score DESC
+        WITH q, collect({concept: c, score: score})[0] AS best_match
+
+        // 최종적으로 검증된 연결만 생성
+        MATCH (target:Concept {id: best_match.concept.id})
+        MERGE (q)-[r:VERIFIED_MENTIONS]->(target)
+        SET r.similarity_score = best_match.score
         RETURN count(r) as link_count
         """
         result = self.graph.query(query, {"threshold": threshold})
