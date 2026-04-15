@@ -58,6 +58,11 @@ class GraphDataManager:
         """)
 
     def link_with_semantic_verification(self, threshold=0.8):
+        """기존 검증 관계를 초기화하고 엄격한 로직으로 재연결"""
+        # 기존에 생성된 모든 VERIFIED_MENTIONS 관계 삭제 (노드는 유지, 선만 삭제)
+        print("🧹 기존 검증 관계 초기화 중...")
+        self.graph.query("MATCH (:Question)-[r:VERIFIED_MENTIONS]->(:Concept) DELETE r")
+
         """의미 유사도 확인 후 날짜 데이터로 검증하여 연결"""
         # 1. 벡터 유사도로 후보 탐색
         # 2. 문제(Question)가 속한 시험(Exam)의 날짜가 개념(Concept)의 출제 날짜에 있는지 검증
