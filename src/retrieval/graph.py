@@ -70,6 +70,7 @@ class GraphRetriever:
 if __name__ == "__main__":
     import os
     from dotenv import load_dotenv
+    from src.retrieval.embedder import TEIEmbedder
 
     # 1. 환경 변수 로드 (DB 접속 정보)
     load_dotenv()
@@ -89,13 +90,21 @@ if __name__ == "__main__":
     # 예: [0.12, -0.05, 0.34, ...] (bge-m3의 경우 1024차원)
     # 모든 요소가 0이면 L2-norm이 0이 되어 에러가 발생합니다.
     # 최소한 하나 이상의 요소에 유효한 값을 넣어줍니다.
-    import random
-    dummy_vector = [random.uniform(-0.1, 0.1) for _ in range(1024)]
+    # import random
+    # test_vector = [random.uniform(-0.1, 0.1) for _ in range(1024)]
+
+    # 테스트용이 아닌 실제 임베딩 데이터 사용
+    embedder = TEIEmbedder()
+    query = "블랙박스 테스트에 대해 알려줘"
+    test_vector = embedder.get_embedding(query)
 
     print("--- [테스트] 그래프 검색 시작 ---")
     try:
         # 개념 및 관련 기출문제 조회
-        raw_results = retriever.search_concepts_with_questions(dummy_vector, top_k=2)
+        # raw_results = retriever.search_concepts_with_questions(test_vector, top_k=2)
+
+        # 실제 벡터로 검색
+        raw_results = retriever.search_concepts_with_questions(test_vector, top_k=2)
         
         # LLM 주입용 텍스트 변환
         formatted_context = retriever.format_context_for_llm(raw_results)
