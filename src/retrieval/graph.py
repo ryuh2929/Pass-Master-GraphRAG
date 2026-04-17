@@ -83,11 +83,14 @@ if __name__ == "__main__":
     # 2. 리트리버 초기화
     retriever = GraphRetriever(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
 
-    # 3. 테스트용 가상 벡터 생성 
+# 3. 테스트용 유효 벡터 생성 
+    # 모든 요소가 0이면 L2-norm이 0이 되어 에러가 발생합니다.
+    # 최소한 하나 이상의 요소에 유효한 값을 넣어줍니다.
+    import random
+    dummy_vector = [random.uniform(-0.1, 0.1) for _ in range(1024)]
     # (실제 환경에서는 TEI API를 통해 질문을 벡터화한 값을 넣어야 합니다)
     # 여기서는 차원수만 맞춘 랜덤 벡터 혹은 기존에 존재하는 더미 데이터를 가정합니다.
     # 예: [0.12, -0.05, 0.34, ...] (bge-m3의 경우 1024차원)
-    dummy_vector = [0.0] * 1024 
 
     print("--- [테스트] 그래프 검색 시작 ---")
     try:
