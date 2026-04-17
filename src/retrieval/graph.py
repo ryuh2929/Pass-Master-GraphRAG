@@ -67,6 +67,7 @@ class GraphRetriever:
             
         return "\n\n".join(context_parts)
     
+# 테스트 코드: 임의의 임베딩 벡터를 만들어서 Neo4j DB에 저장된 데이터 중 가장 유사도가 높은 노드 2개와 그에 연결된 기출문제 조회
 if __name__ == "__main__":
     import os
     from dotenv import load_dotenv
@@ -83,7 +84,7 @@ if __name__ == "__main__":
     # 2. 리트리버 초기화
     retriever = GraphRetriever(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
 
-# 3. 테스트용 유효 벡터 생성 
+    # 3. 테스트용 유효 벡터 생성 
     # (실제 환경에서는 TEI API를 통해 질문을 벡터화한 값을 넣어야 합니다)
     # 여기서는 차원수만 맞춘 랜덤 벡터 혹은 기존에 존재하는 더미 데이터를 가정합니다.
     # 예: [0.12, -0.05, 0.34, ...] (bge-m3의 경우 1024차원)
