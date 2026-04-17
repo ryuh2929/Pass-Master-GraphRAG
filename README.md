@@ -47,6 +47,11 @@ docker-compose restart
 - 날짜 기반 필터링의 엄격성: "유사도는 높으나 실기 출제 이력(practical_dates) 검증을 통과하지 못한 사례를 통해 데이터 정합성을 확보함."
 
 ---
+---
+
+## 변경점
+uv, docker, 온프레미스(하이브리드)
+
 ## 프로젝트 마일스톤
 - langchain
 - langgraph를 사용할 것(분기와 조건을 이용할 것)
