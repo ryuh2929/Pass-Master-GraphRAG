@@ -66,3 +66,43 @@ class GraphRetriever:
             context_parts.append(part)
             
         return "\n\n".join(context_parts)
+    
+if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
+
+    # 1. 환경 변수 로드 (DB 접속 정보)
+    load_dotenv()
+    
+    NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+    NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
+
+    print(f"✅ 환경 변수 로드 완료: {NEO4J_URI}, {NEO4J_USER}, {'*'*len(NEO4J_PASSWORD)}")
+
+    # 2. 리트리버 초기화
+    retriever = GraphRetriever(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
+
+    # 3. 테스트용 가상 벡터 생성 
+    # (실제 환경에서는 TEI API를 통해 질문을 벡터화한 값을 넣어야 합니다)
+    # 여기서는 차원수만 맞춘 랜덤 벡터 혹은 기존에 존재하는 더미 데이터를 가정합니다.
+    # 예: [0.12, -0.05, 0.34, ...] (bge-m3의 경우 1024차원)
+    dummy_vector = [0.0] * 1024 
+
+    print("--- [테스트] 그래프 검색 시작 ---")
+    try:
+        # 개념 및 관련 기출문제 조회
+        raw_results = retriever.search_concepts_with_questions(dummy_vector, top_k=2)
+        
+        # LLM 주입용 텍스트 변환
+        formatted_context = retriever.format_context_for_llm(raw_results)
+        
+        print("\n[검색 결과 요약]")
+        print(formatted_context)
+        
+    except Exception as e:
+        print(f"❌ 테스트 중 오류 발생: {e}")
+    finally:
+        # langchain_neo4j의 Neo4jGraph는 내부적으로 드라이버를 관리하므로 
+        # 명시적인 close가 없어도 세션 종료 시 정리됩니다.
+        print("\n--- 테스트 종료 ---")
