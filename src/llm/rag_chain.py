@@ -15,14 +15,14 @@ class PassMasterChain:
         
         # 2. GraphRetriever 초기화 (환경 변수 직접 참조)
         self.retriever = GraphRetriever(
-            url=os.getenv("NEO4J_URI"),
-            username=os.getenv("NEO4J_USER"),
-            password=os.getenv("NEO4J_PASSWORD")
+            url=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+            username=os.getenv("NEO4J_USER", "neo4j"),
+            password=os.getenv("NEO4J_PASSWORD", "password")
         )
         
         # 3. LLM 설정 (Ollama)
         self.llm_endpoint = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/api/generate")
-        self.model_name = os.getenv("LLM_MODEL", "llama3") # 사용하는 모델명 확인
+        self.model_name = os.getenv("LLM_MODEL", "llama3:latest") # 사용하는 모델명 확인
 
     def run(self, user_query: str):
         print(f"🔎 질문 분석 중: {user_query}")
@@ -45,15 +45,15 @@ class PassMasterChain:
 
     def _build_prompt(self, query, context):
         return f"""너는 데이터 분석 자격증 전문가 'Pass-Master'야. 
-아래의 [학습 지식]을 참고해서 질문에 답해줘.
+        아래의 [학습 지식]을 참고해서 질문에 답해줘.
 
-[학습 지식]
-{context}
+        [학습 지식]
+        {context}
 
-[사용자 질문]
-{query}
+        [사용자 질문]
+        {query}
 
-답변 (전문가답게 구조적으로 작성해줘):"""
+        답변 (전문가답게 구조적으로 작성해줘):"""
 
     def _call_llm(self, prompt):
         try:
@@ -74,7 +74,7 @@ class PassMasterChain:
 if __name__ == "__main__":
     # 테스트 실행
     chain = PassMasterChain()
-    test_question = "발생주의와 관련된 기출문제가 있어?"
+    test_question = "프로토콜의 기본 요소 3가지는?"
     
     print("\n--- [Pass-Master RAG 실행] ---")
     answer = chain.run(test_question)
