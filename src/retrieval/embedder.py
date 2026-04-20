@@ -52,7 +52,7 @@ class TEIEmbedder:
 if __name__ == "__main__":
     # 간단한 동작 테스트
     embedder = TEIEmbedder()
-    test_text = "회계 원칙 중 발생주의란 무엇인가?"
+    test_text = "프로토콜의 기본 요소 3가지는?"
     
     print(f"--- [테스트] TEI 임베딩 시작 ---")
     try:
