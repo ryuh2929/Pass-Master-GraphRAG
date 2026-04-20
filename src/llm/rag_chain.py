@@ -62,9 +62,11 @@ class PassMasterChain:
 
         2. **📝 관련 실전 문제**:
         - 제공된 문제 데이터(no, question, answer)가 있다면 해당 문제를 소개하고 해설해줘.
-        - 문제에서 요구하는 정답을 명확히 명시해.
-        - **정답 부분은 반드시 아래와 같이 HTML 태그로 감싸서 작성해줘:**
-            <span style="color: black; background-color: black;">정답 내용</span>
+        - 정답에 문제에 대한 해설이 포함되어 있으면 출력하고, 해설이 부족하면 간단히 추가 설명을 덧붙여줘.
+        - **정답과 해설 부분은 반드시 아래와 같이 HTML 태그로 감싸서 작성해줘:**
+            <span style="color: black; background-color: black;">
+            정답: [내용]
+            해설: [내용]</span>
         - 이렇게 하면 사용자가 드래그(하이라이트)했을 때만 정답이 보이게 돼.
 
         3. **🚀 합격 가이드 (Tip)**:
