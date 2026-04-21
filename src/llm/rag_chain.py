@@ -140,19 +140,37 @@ class PassMasterChain:
             self.history_store[session_id] = InMemoryChatMessageHistory()
         return self.history_store[session_id]
 
+    def _condense_question(self, query, history):
+        """이전 대화 맥락을 합쳐서 검색에 적합한 질문으로 변환"""
+        condense_prompt = f"이전 대화: {history}\n현재 질문: {query}\n위 대화 내용을 바탕으로, 검색 엔진에 입력할 최적의 한국어 검색어를 한 문장으로 만들어줘."
+        # 아주 가벼운 호출로 처리
+        response = self.llm.invoke(condense_prompt)
+        return response.content if hasattr(response, 'content') else str(response)
+    
     def run(self, user_query: str, session_id: str = "default_user"):
-        print(f"🔎 [{session_id}] 질문 분석 중: {user_query}")
         try:
-            # invoke 시 config에 session_id를 전달해야 함
+            # 1. 이전 대화 기록을 가져옵니다.
+            history_obj = self._get_session_history(session_id)
+            chat_history = history_obj.messages
+
+            # 2. 만약 이전 대화가 있다면, 질문을 재구성합니다.
+            # 예: "방금 말한 거 정답만" -> "프로토콜 3요소 기출문제 정답만 알려줘"
+            refined_query = user_query
+            if chat_history:
+                # LLM에게 맥락을 파악하여 검색용 키워드를 뽑아달라고 요청 (Condense)
+                refined_query = self._condense_question(user_query, chat_history)
+                print(f"🔄 재구성된 질문: {refined_query}")
+
+            # 3. 재구성된 질문으로 검색 및 답변 생성 진행
             return self.chain_with_history.invoke(
-                {"question": user_query},
+                {"question": refined_query}, # 재구성된 질문을 검색 엔진에 전달
                 config={"configurable": {"session_id": session_id}}
             )
         except Exception as e:
             import traceback
             traceback.print_exc() # 상세 에러 로그 확인용
             return f"❌ 파이프라인 실행 중 오류 발생: {e}"
-
+        
 if __name__ == "__main__":
     chain = PassMasterChain()
     test_question = "프로토콜의 기본 요소 3가지는?"
