@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from src.retrieval.embedder import TEIEmbedder
@@ -32,7 +32,7 @@ class PassMasterChain:
         )
 
         # 3. 대화 기록 저장소 (세션별 관리)
-        self.history_store = {}
+        self.history_store = {} 
 
         # 4. 프롬프트 템플릿 구성
         self.condense_question_prompt = ChatPromptTemplate.from_messages([
@@ -120,63 +120,63 @@ class PassMasterChain:
     #     raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
     #     return self.retriever.format_context_for_llm(raw_results)
     
-    # def _get_session_history(self, session_id: str):
-    #     """세션별 대화 기록 반환"""
-    #     if session_id not in self.history_store:
-    #         self.history_store[session_id] = InMemoryChatMessageHistory()
-    #     return self.history_store[session_id]
+    def _get_session_history(self, session_id: str):
+        """세션별 대화 기록 반환"""
+        if session_id not in self.history_store:
+            self.history_store[session_id] = InMemoryChatMessageHistory()
+        return self.history_store[session_id]
 
     def _get_refined_context(self, x):
         """맥락이 포함된 재구성된 질문으로 검색 수행"""
         # 이 시점에서 history가 주입된 상태가 아니므로, 별도로 condense 과정이 필요할 수 있음
         # 간단한 구현을 위해 여기서는 현재 질문을 사용하되, 검색 퀄리티를 위해 로그 확인
-        query = x["question"]
-        query_vector = self.embedder.get_embedding(query)
+        # 1. 여기서 history를 직접 제어합니다. (최근 3개 메시지만 참조)
+        # x['history']는 RunnableWithMessageHistory가 주입해줍니다.
+        recent_history = x.get("history", [])[-3:] 
+        user_query = x["question"]
+
+        # 2. 질문 재구성 (Condense)
+        refined_query = user_query
+        if recent_history:
+            condense_prompt = f"이전 대화: {recent_history}\n현재 질문: {user_query}\n위 맥락을 반영한 구체적인 한국어 검색어 한 문장만 써줘."
+            refined_query = self.llm.invoke(condense_prompt).content
+
+        # 3. 재구성된 질문으로 검색
+        query_vector = self.embedder.get_embedding(refined_query)
         raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
         return self.retriever.format_context_for_llm(raw_results)
 
-    def _get_session_history(self, session_id: str):
-        if session_id not in self.history_store:
-            self.history_store[session_id] = InMemoryChatMessageHistory()
-        return self.history_store[session_id]
+    # def _get_session_history(self, session_id: str):
+    #     # RunnableWithMessageHistory와 쓰려면 객체 구조를 맞춰야 함
+    #     if session_id not in self.history_store:
+    #         self.history_store[session_id] = ConversationTokenBufferMemory(
+    #             llm=self.llm, 
+    #             max_token_limit=self.max_token_limit,
+    #             return_messages=True
+    #         )
+    #     return self.history_store[session_id]
 
-    def _condense_question(self, query, history):
-        """이전 대화 맥락을 합쳐서 검색에 적합한 질문으로 변환"""
-        """최근 3개의 메시지만 참고하여 검색어 재구성 (노이즈 방지)"""
-        # 최근 3개(질문/답변 포함)만 슬라이싱
-        recent_history = history[-3:] 
+    # def _condense_question(self, query, history):
+    #     """
+    #     TokenBufferMemory를 쓰면 history 자체가 이미 '최적화된 최근 대화'입니다.
+    #     따라서 여기서 별도로 history[-3:] 처럼 슬라이싱 할 필요가 없어집니다.
+    #     """
+    #     condense_prompt = f"""
+    #     [최적화된 이전 대화 기록]
+    #     {history}
         
-        condense_prompt = f"""
-        [이전 대화 일부]
-        {recent_history}
+    #     [사용자 현재 질문]
+    #     {query}
         
-        [사용자 현재 질문]
-        {query}
-        
-        위 대화 맥락을 파악해서, 만약 질문에 '이거', '그거', '방금' 같은 대명사가 있다면 구체적인 단어로 치환해줘.
-        만약 질문이 이전 내용과 관계없는 새로운 주제라면, 질문 그대로를 출력해.
-        출력은 오직 검색을 위한 '한국어 핵심 키워드 한 문장'만 할 것.
-        """
-        response = self.llm.invoke(condense_prompt)
-        return response.content if hasattr(response, 'content') else str(response)
+    #     위 내용을 바탕으로 검색을 위한 한국어 핵심 키워드 한 문장만 생성해줘.
+    #     """
+    #     response = self.llm.invoke(condense_prompt)
+    #     return response.content if hasattr(response, 'content') else str(response)
     
     def run(self, user_query: str, session_id: str = "default_user"):
         try:
-            # 1. 이전 대화 기록을 가져옵니다.
-            history_obj = self._get_session_history(session_id)
-            chat_history = history_obj.messages
-
-            # 2. 만약 이전 대화가 있다면, 질문을 재구성합니다.
-            # 예: "방금 말한 거 정답만" -> "프로토콜 3요소 기출문제 정답만 알려줘"
-            refined_query = user_query
-            if chat_history:
-                # LLM에게 맥락을 파악하여 검색용 키워드를 뽑아달라고 요청 (Condense)
-                refined_query = self._condense_question(user_query, chat_history)
-                print(f"🔄 재구성된 질문: {refined_query}")
-
-            # 3. 재구성된 질문으로 검색 및 답변 생성 진행
             return self.chain_with_history.invoke(
-                {"question": refined_query}, # 재구성된 질문을 검색 엔진에 전달
+                {"question": user_query},
                 config={"configurable": {"session_id": session_id}}
             )
         except Exception as e:
