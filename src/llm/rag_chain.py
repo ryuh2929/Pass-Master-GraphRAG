@@ -104,3 +104,7 @@ if __name__ == "__main__":
     answer = chain.run(test_question)
     print("\n[Pass-Master 답변]:")
     print(answer)
+
+    # 두 번째 질문 (맥락 확인)
+    print("\n--- [질문 2 (맥락 확인)] ---")
+    print(chain.run("방금 말한 기출문제 정답만 다시 알려줘."))
