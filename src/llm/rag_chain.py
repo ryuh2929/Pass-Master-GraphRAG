@@ -42,8 +42,14 @@ class PassMasterChain:
         ])
 
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", """너는 국가기술자격증 전문 AI 튜터 'Pass-Master'야. 모든 답변은 반드시 한국어(Korean)로 작성해.
-            제공된 [학습 지식]에 근거하여 답변하고, 모르는 내용은 지어내지 마."""),
+            ("system", """당신은 한국어만 사용하는 국가기술자격증 전문 튜터 'Pass-Master'입니다.
+            
+            [반드시 지켜야 할 규칙]
+            1. 모든 답변은 반드시 한국어로 작성하십시오. 영어 사용을 금지합니다.
+            2. 정답과 해설은 반드시 다음 HTML 형식을 사용하십시오: 
+            <span style="color: black; background-color: black;">정답: [내용]</span>
+            3. [학습 지식]에 없는 내용은 절대 지어내지 마십시오. (특히 프로토콜 3요소: 구문, 의미, 타이밍 확인)
+            4. 사용자가 '정답만' 요구하면 다른 설명 없이 문제와 마스킹된 정답만 출력하십시오."""),
                         MessagesPlaceholder(variable_name="history"), 
                         ("human", """[학습 지식]
             {context}
@@ -52,7 +58,7 @@ class PassMasterChain:
             {question}
 
             ---
-            구조화된 한국어 답변:
+            구조화된 한국어 답변 (질문에 해당하는 내용만):
             1. 💡 핵심 개념 요약
             2. 📝 관련 실전 문제 (정답/해설 마스킹 필수)
             3. 🚀 합격 가이드 (Tip - 반드시 한국어로 작성할 것)""")
@@ -130,20 +136,33 @@ class PassMasterChain:
         """맥락이 포함된 재구성된 질문으로 검색 수행"""
         # 이 시점에서 history가 주입된 상태가 아니므로, 별도로 condense 과정이 필요할 수 있음
         # 간단한 구현을 위해 여기서는 현재 질문을 사용하되, 검색 퀄리티를 위해 로그 확인
-        # 1. 여기서 history를 직접 제어합니다. (최근 3개 메시지만 참조)
+        # 1. 여기서 history를 직접 제어합니다. (최근 2개 메시지만 참조)
         # x['history']는 RunnableWithMessageHistory가 주입해줍니다.
-        recent_history = x.get("history", [])[-3:] 
+        recent_history = x.get("history", [])[-2:] # 직전 문답만 참고
         user_query = x["question"]
 
         # 2. 질문 재구성 (Condense)
-        refined_query = user_query
-        if recent_history:
-            condense_prompt = f"이전 대화: {recent_history}\n현재 질문: {user_query}\n위 맥락을 반영한 구체적인 한국어 검색어 한 문장만 써줘."
-            refined_query = self.llm.invoke(condense_prompt).content
-
-        # 3. 재구성된 질문으로 검색
-        query_vector = self.embedder.get_embedding(refined_query)
-        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
+        condense_prompt = f"""
+        이전 대화: {recent_history}
+        현재 질문: {user_query}
+        
+        위 대화를 바탕으로:
+        1. 새로운 지식 검색이 필요하면 'SEARCH: [키워드]' 형태로 출력해.
+        2. 이전 대화 내용 안에서 충분히 답할 수 있다면 'NO_SEARCH'라고만 출력해.
+        """
+        decision = self.llm.invoke(condense_prompt).content.strip()
+        
+        # 3. 결정에 따른 분기 처리 (데이터 노이즈 차단)
+        if "NO_SEARCH" in decision:
+            print("💡 [Decision] 이전 대화 맥락 활용 (추가 검색 생략)")
+            return "이전 대화 내용을 참고하여 답변하세요." 
+        
+        # 4. 검색이 필요한 경우에만 DB 쿼리 실행
+        search_keyword = decision.replace("SEARCH:", "").strip()
+        print(f"🔎 [Decision] 신규 검색 실행: {search_keyword}")
+        
+        query_vector = self.embedder.get_embedding(search_keyword)
+        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2) # top_k 축소
         return self.retriever.format_context_for_llm(raw_results)
 
     # def _get_session_history(self, session_id: str):
@@ -186,7 +205,7 @@ class PassMasterChain:
         
 if __name__ == "__main__":
     chain = PassMasterChain()
-    test_question = "프로토콜의 기본 요소 3가지는?"
+    test_question = "블랙박스 테스트 설명"
     
     print("\n--- [Pass-Master LangChain RAG 실행] ---")
     answer = chain.run(test_question)
