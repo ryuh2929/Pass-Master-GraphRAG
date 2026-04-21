@@ -264,6 +264,7 @@ httpx==0.28.1 \
     # via
     #   langgraph-sdk
     #   langsmith
+    #   ollama
     #   openai
 httpx-sse==0.4.3 \
     --hash=sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc \
@@ -339,6 +340,7 @@ langchain-core==1.2.28 \
     #   langchain-classic
     #   langchain-community
     #   langchain-neo4j
+    #   langchain-ollama
     #   langchain-openai
     #   langchain-text-splitters
     #   langgraph
@@ -347,6 +349,10 @@ langchain-core==1.2.28 \
 langchain-neo4j==0.9.0 \
     --hash=sha256:58366dae7c691229ccf3979f0ea9e5d473f46199dfa96791b87b315daabbc141 \
     --hash=sha256:ea12abe315dccd3e2d2a2190fe117a2a668cdd60b4c09e699c9a4e55f8de3920
+    # via pass-master-graphrag
+langchain-ollama==1.1.0 \
+    --hash=sha256:43ac83a6eacb0f43855810739794dd55019e0d9b17bdcf3ecb3b1991ac3b59dd \
+    --hash=sha256:f776f56f6782ae4da7692579b94a6575906118318d1023b455d7207f9d059811
     # via pass-master-graphrag
 langchain-openai==1.1.12 \
     --hash=sha256:ccf5ef02c896f6807b4d0e51aaf678a72ce81ae41201cae8d65e11eeff9ecb79 \
@@ -510,6 +516,10 @@ numpy==2.4.4 \
     #   langchain-community
     #   neo4j-graphrag
     #   scipy
+ollama==0.6.1 \
+    --hash=sha256:478c67546836430034b415ed64fa890fd3d1ff91781a9d548b3325274e69d7c6 \
+    --hash=sha256:fc4c984b345735c5486faeee67d8a265214a31cbb828167782dc642ce0a2bf8c
+    # via langchain-ollama
 openai==2.31.0 \
     --hash=sha256:43ca59a88fc973ad1848d86b98d7fac207e265ebbd1828b5e4bdfc85f79427a5 \
     --hash=sha256:44e1344d87e56a493d649b17e2fac519d1368cbb0745f59f1957c4c26de50a0a
@@ -643,6 +653,7 @@ pydantic==2.12.5 \
     #   langgraph
     #   langsmith
     #   neo4j-graphrag
+    #   ollama
     #   openai
     #   pydantic-settings
 pydantic-core==2.41.5 \
