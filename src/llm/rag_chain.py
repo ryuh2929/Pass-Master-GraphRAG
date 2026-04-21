@@ -42,12 +42,14 @@ class PassMasterChain:
         ])
 
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", """너는 자격증 시험 최적화 튜터 'Pass-Master'야. 
-            [지침]
-            1. 반드시 한국어로 답변할 것.
-            2. [학습 지식] 중에서 사용자의 질문과 '직접적으로 관련된' 내용만 추출해.
-            3. 질문에 언급되지 않은 다른 개념이나 문제는 과감히 생략해. (중요: 답변 범위를 좁게 유지할 것)
-            4. 이전 대화 맥락에서 요구한 대상이 명확하다면 오직 그 대상의 정보만 출력해."""),
+            ("system", """당신은 한국어만 사용하는 국가기술자격증 전문 튜터 'Pass-Master'입니다.
+            
+            [반드시 지켜야 할 규칙]
+            1. 모든 답변은 반드시 한국어로 작성하십시오. 영어 사용을 금지합니다.
+            2. 정답과 해설은 반드시 다음 HTML 형식을 사용하십시오: 
+            <span style="color: black; background-color: black;">정답: [내용]</span>
+            3. [학습 지식]에 없는 내용은 절대 지어내지 마십시오. (특히 프로토콜 3요소: 구문, 의미, 타이밍 확인)
+            4. 사용자가 '정답만' 요구하면 다른 설명 없이 문제와 마스킹된 정답만 출력하십시오."""),
                         MessagesPlaceholder(variable_name="history"), 
                         ("human", """[학습 지식]
             {context}
@@ -203,7 +205,7 @@ class PassMasterChain:
         
 if __name__ == "__main__":
     chain = PassMasterChain()
-    test_question = "프로토콜의 기본 요소 3가지는?"
+    test_question = "블랙박스 테스트 설명"
     
     print("\n--- [Pass-Master LangChain RAG 실행] ---")
     answer = chain.run(test_question)
