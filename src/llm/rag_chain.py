@@ -3,11 +3,12 @@ from dotenv import load_dotenv
 
 # LangChain 관련 컴포넌트
 from langchain_ollama import ChatOllama
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
 
-# 기존 분석가님이 작성하신 로직
 from src.retrieval.embedder import TEIEmbedder
 from src.retrieval.graph import GraphRetriever
 
@@ -30,63 +31,69 @@ class PassMasterChain:
             temperature=0.1 # 분석가용 사실 중심 답변 설정
         )
 
-        # 3. 프롬프트 템플릿 구성
-        self.prompt = ChatPromptTemplate.from_template("""
-        ### [System Role]
-        너는 국가기술자격증 합격을 가이드하는 전문 AI 튜터 'Pass-Master'야. 
-        분석가적인 관점에서 수험생에게 정확한 개념과 실전 문제 풀이 전략을 한국어로 제공해야 해.
+        # 3. 대화 기록 저장소 (세션별 관리)
+        self.history_store = {}
 
-        ### [Provided Context]
-        아래는 검색 엔진을 통해 추출된 데이터베이스 내 지식이야. 이 내용에만 기반해서 답변해.
-        {context}
+        # 4. 프롬프트 템플릿 구성
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", """너는 국가기술자격증 합격을 가이드하는 전문 AI 튜터 'Pass-Master'야.
+            제공된 [학습 지식]과 이전 대화 맥락을 바탕으로 한국어로 답변해줘."""),
+        MessagesPlaceholder(variable_name="history"), # 대화 기록이 들어갈 자리
+            ("human", """[학습 지식]
+            {context}
+             
+             [사용자 질문]
+            {question}
 
-        ### [Output Instructions]
-        반드시 다음 구조를 지켜서 한국어로 답변할 것:
+            ---
+            반드시 아래 구조로 답변할 것:
+            1. 💡 핵심 개념 요약 (중요도/기출날짜 포함)
+            2. 📝 관련 실전 문제 (정답/해설은 반드시 검은색 마스킹 HTML 사용)
+            3. 🚀 합격 가이드 (Tip)""")
+        ])
 
-        1. **💡 핵심 개념 요약**: 
-        - 제공된 'document' 내용을 바탕으로 정의와 특징을 일목요연하게 정리해줘.
-        - 중요도(importance)나 기출 날짜가 있다면 언급하며 강조해줘.
-
-        2. **📝 관련 실전 문제**:
-        - 제공된 문제 데이터(no, question, answer)가 있다면 해당 문제를 소개하고 해설해줘.
-        - **정답과 해설 부분은 반드시 아래와 같이 HTML 태그로 감싸서 작성해줘:**
-            <span style="color: black; background-color: black;">
-            정답: [내용] <br>
-            해설: [내용]</span>
-        - 드래그했을 때만 보이게 <br> 태그로 줄바꿈을 명확히 해줘.
-
-        3. **🚀 합격 가이드 (Tip)**:
-        - 해당 개념이 시험에 어떻게 나오는지 분석가적인 팁을 줘.
-
-        ---
-        ### [User Question]
-        {question}
-
-        ### [Final Answer]
-        """)
-
-        # 4. 체인 조립 (LCEL 방식)
-        self.chain = (
-            {
-                "context": RunnableLambda(self._get_graph_context),
-                "question": RunnablePassthrough()
-            }
+        # 5. 체인 조립 (LCEL 방식)
+        base_chain = (
+            RunnablePassthrough.assign(
+                context=RunnableLambda(lambda x: self._get_graph_context(x["question"]))
+            )
             | self.prompt
             | self.llm
             | StrOutputParser()
         )
 
+        # 6. 메모리가 통합된 최종 체인
+        self.chain_with_history = RunnableWithMessageHistory(
+            base_chain,
+            get_session_history=self._get_session_history,
+            input_messages_key="question",
+            history_messages_key="history"
+        )
+
     def _get_graph_context(self, user_query: str) -> str:
-        """기존 분석가님의 검색 로직을 LangChain 파이프라인에 이식"""
+        """기존 검색 로직을 LangChain 파이프라인에 이식"""
+        """질문을 벡터화하여 Neo4j에서 관련 지식 추출"""
         query_vector = self.embedder.get_embedding(user_query)
         raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
         return self.retriever.format_context_for_llm(raw_results)
+    
+    def _get_session_history(self, session_id: str):
+        """세션별 대화 기록 반환"""
+        if session_id not in self.history_store:
+            self.history_store[session_id] = InMemoryChatMessageHistory()
+        return self.history_store[session_id]
 
-    def run(self, user_query: str):
-        print(f"🔎 질문 분석 중 (LangChain): {user_query}")
+    def run(self, user_query: str, session_id: str = "default_user"):
+        print(f"🔎 [{session_id}] 질문 분석 중: {user_query}")
         try:
-            return self.chain.invoke(user_query)
+            # invoke 시 config에 session_id를 전달해야 함
+            return self.chain_with_history.invoke(
+                {"question": user_query},
+                config={"configurable": {"session_id": session_id}}
+            )
         except Exception as e:
+            import traceback
+            traceback.print_exc() # 상세 에러 로그 확인용
             return f"❌ 파이프라인 실행 중 오류 발생: {e}"
 
 if __name__ == "__main__":
