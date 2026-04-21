@@ -142,8 +142,21 @@ class PassMasterChain:
 
     def _condense_question(self, query, history):
         """이전 대화 맥락을 합쳐서 검색에 적합한 질문으로 변환"""
-        condense_prompt = f"이전 대화: {history}\n현재 질문: {query}\n위 대화 내용을 바탕으로, 검색 엔진에 입력할 최적의 한국어 검색어를 한 문장으로 만들어줘."
-        # 아주 가벼운 호출로 처리
+        """최근 3개의 메시지만 참고하여 검색어 재구성 (노이즈 방지)"""
+        # 최근 3개(질문/답변 포함)만 슬라이싱
+        recent_history = history[-3:] 
+        
+        condense_prompt = f"""
+        [이전 대화 일부]
+        {recent_history}
+        
+        [사용자 현재 질문]
+        {query}
+        
+        위 대화 맥락을 파악해서, 만약 질문에 '이거', '그거', '방금' 같은 대명사가 있다면 구체적인 단어로 치환해줘.
+        만약 질문이 이전 내용과 관계없는 새로운 주제라면, 질문 그대로를 출력해.
+        출력은 오직 검색을 위한 '한국어 핵심 키워드 한 문장'만 할 것.
+        """
         response = self.llm.invoke(condense_prompt)
         return response.content if hasattr(response, 'content') else str(response)
     
