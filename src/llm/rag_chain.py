@@ -43,19 +43,19 @@ class PassMasterChain:
 
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", """너는 국가기술자격증 전문 AI 튜터 'Pass-Master'야. 모든 답변은 반드시 한국어(Korean)로 작성해.
-제공된 [학습 지식]에 근거하여 답변하고, 모르는 내용은 지어내지 마."""),
-            MessagesPlaceholder(variable_name="history"), 
-            ("human", """[학습 지식]
-{context}
+            제공된 [학습 지식]에 근거하여 답변하고, 모르는 내용은 지어내지 마."""),
+                        MessagesPlaceholder(variable_name="history"), 
+                        ("human", """[학습 지식]
+            {context}
 
-[사용자 질문]
-{question}
+            [사용자 질문]
+            {question}
 
----
-구조화된 한국어 답변:
-1. 💡 핵심 개념 요약
-2. 📝 관련 실전 문제 (정답/해설 마스킹 필수)
-3. 🚀 합격 가이드 (Tip - 반드시 한국어로 작성할 것)""")
+            ---
+            구조화된 한국어 답변:
+            1. 💡 핵심 개념 요약
+            2. 📝 관련 실전 문제 (정답/해설 마스킹 필수)
+            3. 🚀 합격 가이드 (Tip - 반드시 한국어로 작성할 것)""")
         ])
 
         # 검색용 질문을 재구성하는 체인
