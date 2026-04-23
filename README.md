@@ -82,17 +82,17 @@ docker exec -it ollama ollama pull llama3
 프로젝트 루트에 .env 파일을 생성하고 다음 정보를 설정 (.env.example 수정 후 파일명 변경)
 
 ```
-# ollama | openai 중 선택
+# llama3:latest | openai 중 선택
 LLM_MODEL=llama3:latest
 OLLAMA_HOST=http://localhost:11434
 
 # Neo4j
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
+NEO4J_PASSWORD=your_password_here
 
 # OpenAI (LLM_MODEL=openai 일 때만 필요)
-OPENAI_API_KEY=your_openai_api_key
+OPENAI_API_KEY=your_api_key_here
 ```
 
 ### 🐉 Step 5: 앱 실행
