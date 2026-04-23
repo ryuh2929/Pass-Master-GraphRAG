@@ -103,9 +103,9 @@ docker-compose pull
 ```
 기타
 ```bash
-# 실행 중인 서비스 상태
+# 실행 중인 서비스 상태 확인
 docker-compose ps
-# 로그
+# 로그 확인
 docker-compose logs
 # 재시작
 docker-compose restart
