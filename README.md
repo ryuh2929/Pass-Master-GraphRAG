@@ -50,8 +50,6 @@
 
 ### Prerequisites
 - uv (권장)
-- Neo4j Database
-- Ollama (Llama3 모델 로드 완료)
 - Docker
 
 ### Setup
@@ -63,6 +61,30 @@ uv sync
 pip install -r requirements.txt
 ```
 
+### Step 1: Docker Compose 실행
+```bash
+docker-compose up -d
+```
+
+모델 다운로드 및 neo4j 실행에 시간이 걸립니다.
+neo4j 상태 로그 확인
+
+```bash
+docker-compose logs -f neo4j --tail 12
+```
+
+### Step 2: 모델 로드 (최초 1회)
+```bash
+docker exec -it ollama ollama pull llama3
+```
+
+### Step 3: 앱 실행
+```bash
+uv run streamlit run app.py
+# 또는 가상환경 실행 후 실행
+source .venv/Scripts/activate
+streamlit run app.py
+```
 ---
 
 ### Docker 명령어
@@ -79,7 +101,7 @@ docker-compose down
 docker-compose pull
 ```
 기타
-```
+```bash
 # 실행 중인 서비스 상태
 docker-compose ps
 # 로그
@@ -88,16 +110,9 @@ docker-compose logs
 docker-compose restart
 ```
 
-## 앱 실행
-```bash
-uv run streamlit run app.py
-# 또는
-streamlit run app.py
-```
-
 ---
 
-📝 Configuration (.env)
+## 📝 Configuration (.env)
 프로젝트 루트에 .env 파일을 생성하고 다음 정보를 설정해야 합니다.
 
 ```
@@ -107,6 +122,11 @@ NEO4J_PASSWORD=your_password
 LLM_MODEL=llama3:latest
 OLLAMA_HOST=http://localhost:11434
 ```
+---
+
+## 🔗 neo4j Browser
+http://localhost:7474/browser/
+
 ---
 
 ## 📝 트러블슈팅
