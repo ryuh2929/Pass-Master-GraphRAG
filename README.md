@@ -78,7 +78,24 @@ docker-compose logs -f neo4j --tail 12
 docker exec -it ollama ollama pull llama3
 ```
 
-### 🐎🐉 Step 4: 앱 실행
+### 🔑 Step 4: 환경 변수 설정 (.env)
+프로젝트 루트에 .env 파일을 생성하고 다음 정보를 설정 (.env.example 수정 후 파일명 변경)
+
+```
+# ollama | openai 중 선택
+LLM_MODEL=llama3:latest
+OLLAMA_HOST=http://localhost:11434
+
+# Neo4j
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password
+
+# OpenAI (LLM_MODEL=openai 일 때만 필요)
+OPENAI_API_KEY=your_openai_api_key
+```
+
+### 🐉 Step 5: 앱 실행🐉🦖🦕
 ```bash
 uv run streamlit run app.py
 
@@ -89,20 +106,7 @@ streamlit run app.py
 
 ---
 
-## 📝 Configuration (.env)
-프로젝트 루트에 .env 파일을 생성하고 다음 정보를 설정해야 합니다.
-
-```
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
-LLM_MODEL=llama3:latest
-OLLAMA_HOST=http://localhost:11434
-```
-
----
-
-### Docker 명령어
+### 🐋 Docker 명령어
 시작
 ```
 docker-compose up
@@ -134,10 +138,11 @@ http://localhost:7474/browser/
 
 ## 📝 트러블슈팅
 #### **"중첩 구조의 데이터 손실 방지"**
-- 현상: 부모 태그(Question)와 자식 태그(Answer)가 계층 구조로 얽혀 있어, 방문 처리(Visited Check) 시 하위 데이터가 누락되는 현상 발생.
-- 해결: 성능 차이가 미미한 수준(O(N) 유지)이므로, 엄격한 순차 방문 대신 **계층적 재탐색을 허용**하여 데이터 추출의 완전성을 확보함.
+- 현상: 부모 태그(Question)와 자식 태그(Answer)가 계층 구조로 얽혀 있어, **방문 처리(Visited Check) 시 하위 데이터가 누락**되는 현상 발생
+- 해결: 성능 차이가 미미한 수준(O(N) 유지)이므로, 엄격한 순차 방문 대신 **계층적 재탐색을 허용**하여 데이터 추출의 완전성 확보
 
-- 현상: 
+- 현상: '알려줘' 같은 **불용어(Stopwords) 임베딩 벡터와 유사한 데이터가 답변으로 출력**되어 핵심 키워드에 관한 내용이 아닌 엉뚱한 답변이 출력되는 현상 발생
+- 해결: 질문 입력 전에 **LLM을 통해 불용어 제거**하여 쿼리를 정제하는 단계 추가
 
 ---
 ## 모델별 성능 비교
