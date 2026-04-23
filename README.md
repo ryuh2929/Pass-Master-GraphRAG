@@ -49,10 +49,10 @@
 ## 💻 Installation & Setup
 
 ### Prerequisites
-- uv (권장)
-- Docker
+- [uv](https://github.com/astral-sh/uv) (권장)
+- [Docker](https://docs.docker.com/desktop/setup/install/windows-install/)
 
-### Setup
+### ⚙️ Step 1: Setup
 ```bash
 ### uv 사용자
 uv sync
@@ -61,7 +61,7 @@ uv sync
 pip install -r requirements.txt
 ```
 
-### Step 1: Docker Compose 실행
+### 🐳 Step 2: Docker Compose 실행
 ```bash
 docker-compose up -d
 ```
@@ -73,12 +73,12 @@ neo4j 상태 로그 확인
 docker-compose logs -f neo4j --tail 12
 ```
 
-### Step 2: 모델 수동 로드 (entrypoint가 동작하지 않을 때만 최초 1회 실행)
+### 🧠 Step 3: 모델 수동 로드 (entrypoint가 동작하지 않을 때만 최초 1회 실행)
 ```bash
 docker exec -it ollama ollama pull llama3
 ```
 
-### Step 3: 앱 실행
+### 🐎🐉 Step 4: 앱 실행
 ```bash
 uv run streamlit run app.py
 
@@ -86,6 +86,20 @@ uv run streamlit run app.py
 source .venv/Scripts/activate
 streamlit run app.py
 ```
+
+---
+
+## 📝 Configuration (.env)
+프로젝트 루트에 .env 파일을 생성하고 다음 정보를 설정해야 합니다.
+
+```
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password
+LLM_MODEL=llama3:latest
+OLLAMA_HOST=http://localhost:11434
+```
+
 ---
 
 ### Docker 명령어
@@ -113,19 +127,7 @@ docker-compose restart
 
 ---
 
-## 📝 Configuration (.env)
-프로젝트 루트에 .env 파일을 생성하고 다음 정보를 설정해야 합니다.
-
-```
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
-LLM_MODEL=llama3:latest
-OLLAMA_HOST=http://localhost:11434
-```
----
-
-## 🔗 neo4j Browser
+## 🔗 neo4j Browser 주소
 http://localhost:7474/browser/
 
 ---
@@ -134,6 +136,8 @@ http://localhost:7474/browser/
 #### **"중첩 구조의 데이터 손실 방지"**
 - 현상: 부모 태그(Question)와 자식 태그(Answer)가 계층 구조로 얽혀 있어, 방문 처리(Visited Check) 시 하위 데이터가 누락되는 현상 발생.
 - 해결: 성능 차이가 미미한 수준(O(N) 유지)이므로, 엄격한 순차 방문 대신 **계층적 재탐색을 허용**하여 데이터 추출의 완전성을 확보함.
+
+- 현상: 
 
 ---
 ## 모델별 성능 비교
