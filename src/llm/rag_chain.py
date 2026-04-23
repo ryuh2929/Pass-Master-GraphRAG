@@ -125,45 +125,82 @@ class PassMasterChain:
     #     query_vector = self.embedder.get_embedding(user_query)
     #     raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
     #     return self.retriever.format_context_for_llm(raw_results)
-    
+
     def _get_session_history(self, session_id: str):
         """세션별 대화 기록 반환"""
         if session_id not in self.history_store:
             self.history_store[session_id] = InMemoryChatMessageHistory()
         return self.history_store[session_id]
+        
+    def _execute_vector_search(self, query, history=None):
+        """
+        질문 재구성 후 Vector DB 검색 실행
+        
+        불용어를 제거하고 핵심 키워드 위주로 검색을 수행하여 
+        '알려줘' 노이즈 현상을 방지함
+        """
+        # 1. LLM을 사용하여 검색용 '핵심 명사'만 추출 (Condense & Clean)
+        clean_query_prompt = f"""
+        사용자 질문: "{query}"
+        위 질문에서 '알려줘', '설명해줘', '알려주세요' 같은 조기 서술어를 제외하고,
+        지식 베이스 검색에 필요한 핵심 전문 용어(명사)만 한 단어로 추출해줘.
+        추출된 단어: """
+
+        refined_query = self.llm.invoke(clean_query_prompt).content.strip()
+        print(f"🧹 [Refine] 검색어 정제: {query} -> {refined_query}")
+        
+        # 2. 정제된 키워드로 임베딩 및 Neo4j 검색 수행
+        query_vector = self.embedder.get_embedding(refined_query)
+        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
+        
+        # 3. 유사도가 너무 낮은 결과는 무시하는 로직 추가 가능
+        threshold = 0.7
+        filtered_results = [r for r in raw_results if r.get('score', 0) > threshold]
+
+        # 결과가 하나도 없으면 LLM이 검색 결과 없음을 인지하도록 빈 값 처리
+        if not filtered_results:
+            return "지식 베이스에서 관련 내용을 찾을 수 없습니다."
+        
+        return self.retriever.format_context_for_llm(filtered_results)
 
     def _get_refined_context(self, x):
-        """맥락이 포함된 재구성된 질문으로 검색 수행"""
+        """
+        맥락이 포함된 재구성된 질문으로 검색 수행
+            - LLM에게 검색 필요성 판단을 맡기는 대신, 명시적 키워드가 없을 경우 무조건 검색을 수행하는 하드 라우팅 로직
+        """
         # 이 시점에서 history가 주입된 상태가 아니므로, 별도로 condense 과정이 필요할 수 있음
         # 간단한 구현을 위해 여기서는 현재 질문을 사용하되, 검색 퀄리티를 위해 로그 확인
         # 1. 여기서 history를 직접 제어합니다. (최근 2개 메시지만 참조)
         # x['history']는 RunnableWithMessageHistory가 주입해줍니다.
-        recent_history = x.get("history", [])[-2:] # 직전 문답만 참고
         user_query = x["question"]
+        recent_history = x.get("history", [])[-2:] # 직전 문답만 참고
+        
+        # '이전 맥락'을 써야만 하는 명시적 키워드 리스트 (Hard Rule)
+        # 이 단어들이 포함되지 않았다면 LLM 판단 없이 바로 검색으로 보냄
+        context_keywords = ["방금", "그거", "이거", "앞서", "다시", "정답만", "해설만"]
+        is_contextual_request = any(word in user_query for word in context_keywords)
 
-        # 2. 질문 재구성 (Condense)
-        condense_prompt = f"""
-        이전 대화: {recent_history}
-        현재 질문: {user_query}
+        if not is_contextual_request:
+            print(f"🔎 [Decision] 신규 검색 실행: {user_query}")
+            return self._execute_vector_search(user_query, recent_history)
+
+        # 2. 키워드가 있는 경우, LLM에게 검색 필요성 판단
+        decision_prompt = f"""
+        [이전 대화] {recent_history}
+        [현재 질문] {user_query}
         
-        위 대화를 바탕으로:
-        1. 새로운 지식 검색이 필요하면 'SEARCH: [키워드]' 형태로 출력해.
-        2. 이전 대화 내용 안에서 충분히 답할 수 있다면 'NO_SEARCH'라고만 출력해.
-        """
-        decision = self.llm.invoke(condense_prompt).content.strip()
+        질문이 이전 대화에 나온 내용의 '정답'이나 '부연 설명'만을 요구합니까?
+        그렇다면 'YES', 새로운 정보 검색이 필요해 보인다면 'NO'라고만 답하세요.
+        답변: """
         
-        # 3. 결정에 따른 분기 처리 (데이터 노이즈 차단)
-        if "NO_SEARCH" in decision:
-            print("💡 [Decision] 이전 대화 맥락 활용 (추가 검색 생략)")
-            return "이전 대화 내용을 참고하여 답변하세요." 
+        decision = self.llm.invoke(decision_prompt).content.strip().upper()
+
+        if "YES" in decision:
+            print("💡 [Decision] 명시적 키워드 기반 맥락 활용 (History Reuse)")
+            return "이전 대화 내용을 바탕으로 답변하세요."
         
-        # 4. 검색이 필요한 경우에만 DB 쿼리 실행
-        search_keyword = decision.replace("SEARCH:", "").strip()
-        print(f"🔎 [Decision] 신규 검색 실행: {search_keyword}")
-        
-        query_vector = self.embedder.get_embedding(search_keyword)
-        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2) # top_k 축소
-        return self.retriever.format_context_for_llm(raw_results)
+        print(f"🔎 [Decision] 키워드는 있으나 검색 필요 판단: {user_query}")
+        return self._execute_vector_search(user_query, recent_history)
 
     # def _get_session_history(self, session_id: str):
     #     # RunnableWithMessageHistory와 쓰려면 객체 구조를 맞춰야 함
