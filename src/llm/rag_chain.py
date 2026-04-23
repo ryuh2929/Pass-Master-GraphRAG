@@ -133,55 +133,53 @@ class PassMasterChain:
         return self.history_store[session_id]
 
     def _get_refined_context(self, x):
-        """맥락이 포함된 재구성된 질문으로 검색 수행"""
+        """
+        맥락이 포함된 재구성된 질문으로 검색 수행
+            - LLM에게 검색 필요성 판단을 맡기는 대신, 명시적 키워드가 없을 경우 무조건 검색을 수행하는 하드 라우팅 로직
+        """
         # 이 시점에서 history가 주입된 상태가 아니므로, 별도로 condense 과정이 필요할 수 있음
         # 간단한 구현을 위해 여기서는 현재 질문을 사용하되, 검색 퀄리티를 위해 로그 확인
         # 1. 여기서 history를 직접 제어합니다. (최근 2개 메시지만 참조)
         # x['history']는 RunnableWithMessageHistory가 주입해줍니다.
         user_query = x["question"]
         recent_history = x.get("history", [])[-2:] # 직전 문답만 참고
+        
+        # '이전 맥락'을 써야만 하는 명시적 키워드 리스트 (Hard Rule)
+        # 이 단어들이 포함되지 않았다면 LLM 판단 없이 바로 검색으로 보냄
+        context_keywords = ["방금", "그거", "이거", "앞서", "다시", "정답만", "해설만"]
+        is_contextual_request = any(word in user_query for word in context_keywords)
 
-        # 이전 대화 기록이 없으면 바로 검색
-        if not recent_history:
-            return self._execute_vector_search(user_query)
+        if not is_contextual_request:
+            print(f"🔎 [Decision] 신규 검색 실행: {user_query}")
+            return self._execute_vector_search(user_query, recent_history)
 
-        # 2. LLM에게 검색 필요성 판단
+        # 2. 키워드가 있는 경우, LLM에게 검색 필요성 판단
         decision_prompt = f"""
-        당신은 데이터 검색 전문가입니다.
+        [이전 대화] {recent_history}
+        [현재 질문] {user_query}
         
-        [최근 대화 맥락]
-        {recent_history}
+        질문이 이전 대화에 나온 내용의 '정답'이나 '부연 설명'만을 요구합니까?
+        그렇다면 'YES', 새로운 정보 검색이 필요해 보인다면 'NO'라고만 답하세요.
+        답변: """
         
-        [새로운 질문]
-        {user_query}
+        decision = self.llm.invoke(decision_prompt).content.strip().upper()
+
+        if "YES" in decision:
+            print("💡 [Decision] 명시적 키워드 기반 맥락 활용 (History Reuse)")
+            return "이전 대화 내용을 바탕으로 답변하세요."
         
-        [판단 기준]
-        1. 새로운 질문이 이전 대화에서 설명된 '구체적인 개념'의 정답이나 요약만 요구합니까? -> 'USE_HISTORY'
-        2. 새로운 질문에 이전 대화에 없던 '새로운 용어'나 '개념'이 등장합니까? -> 'SEARCH'
-        3. 이전 대화가 불충분하여 더 자세한 '기출 데이터'가 필요합니까? -> 'SEARCH'
-        
-        답변은 반드시 'USE_HISTORY' 또는 'SEARCH' 둘 중 하나만 출력하십시오.
-        """
-        decision = self.llm.invoke(decision_prompt).content.strip()
-        
-        # 3. 결정에 따른 분기 처리 (데이터 노이즈 차단)
-        if "USE_HISTORY" in decision:
-            print("💡 [Decision] 기존 맥락 활용 (History Reuse)")
-            # 이전 대화에서 사용되었던 핵심 지식은 이미 LLM의 History에 있으므로 빈 컨텍스트 전달
-            return "이전 대화의 지식 베이스를 바탕으로 답변하세요."
-        
-        # 4. 검색이 필요한 경우에만 DB 쿼리 실행
-        print(f"🔎 [Decision] 지식 베이스 신규 검색 실행")
+        print(f"🔎 [Decision] 키워드는 있으나 검색 필요 판단: {user_query}")
         return self._execute_vector_search(user_query, recent_history)
     
     def _execute_vector_search(self, query, history=None):
-        """실제 DB 검색을 수행하는 유틸리티 함수"""
+        """질문 재구성 후 Vector DB 검색 실행"""
         refined_query = query
         if history:
-            # 맥락을 섞어 검색어 정제
-            condense_prompt = f"대화: {history}\n질문: {query}\n위 맥락을 포함한 한국어 검색 키워드 한 문장:"
-            refined_query = self.llm.invoke(condense_prompt).content
-
+            # 대화 맥락을 녹여서 더 정확한 검색어 생성 (Condense)
+            condense_prompt = f"대화: {history}\n질문: {query}\n위 내용을 바탕으로 검색 엔진에 넣을 구체적인 한국어 핵심 키워드 한 문장만 생성해줘."
+            refined_query = self.llm.invoke(condense_prompt).content.strip()
+        
+        # 임베딩 및 Neo4j 검색
         query_vector = self.embedder.get_embedding(refined_query)
         raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2)
         return self.retriever.format_context_for_llm(raw_results)
