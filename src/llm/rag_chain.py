@@ -151,12 +151,17 @@ class PassMasterChain:
         
         # 2. 정제된 키워드로 임베딩 및 Neo4j 검색 수행
         query_vector = self.embedder.get_embedding(refined_query)
-        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2)
+        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
         
         # 3. 유사도가 너무 낮은 결과는 무시하는 로직 추가 가능
-        results = [r for r in raw_results if r.score > 0.7] 
+        threshold = 0.7
+        filtered_results = [r for r in raw_results if r.get('score', 0) > threshold]
+
+        # 결과가 하나도 없으면 LLM이 검색 결과 없음을 인지하도록 빈 값 처리
+        if not filtered_results:
+            return "지식 베이스에서 관련 내용을 찾을 수 없습니다."
         
-        return self.retriever.format_context_for_llm(results)
+        return self.retriever.format_context_for_llm(filtered_results)
 
     def _get_refined_context(self, x):
         """
