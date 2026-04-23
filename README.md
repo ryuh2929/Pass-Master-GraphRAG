@@ -81,7 +81,8 @@ docker exec -it ollama ollama pull llama3
 ### Step 3: 앱 실행
 ```bash
 uv run streamlit run app.py
-# 또는 가상환경 실행 후 실행
+
+# 또는 가상환경 실행 후 실행 (pip 사용자일 경우)
 source .venv/Scripts/activate
 streamlit run app.py
 ```
