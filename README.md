@@ -35,7 +35,7 @@
 
 ---
 
-## 🏗 System Workflow
+## 🔄 System Workflow
 
 1. **User Input**: 사용자가 질문을 입력합니다.
 2. **Hard Logic Routing**: 입력어 내 특정 키워드(방금, 다시 등)를 검사하여 대화 맥락 활용 여부를 1차 판정합니다.
