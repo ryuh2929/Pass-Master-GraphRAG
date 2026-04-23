@@ -133,17 +133,30 @@ class PassMasterChain:
         return self.history_store[session_id]
         
     def _execute_vector_search(self, query, history=None):
-        """질문 재구성 후 Vector DB 검색 실행"""
-        refined_query = query
-        if history:
-            # 대화 맥락을 녹여서 더 정확한 검색어 생성 (Condense)
-            condense_prompt = f"대화: {history}\n질문: {query}\n위 내용을 바탕으로 검색 엔진에 넣을 구체적인 한국어 핵심 키워드 한 문장만 생성해줘."
-            refined_query = self.llm.invoke(condense_prompt).content.strip()
+        """
+        질문 재구성 후 Vector DB 검색 실행
         
-        # 임베딩 및 Neo4j 검색
+        불용어를 제거하고 핵심 키워드 위주로 검색을 수행하여 
+        '알려줘' 노이즈 현상을 방지함
+        """
+        # 1. LLM을 사용하여 검색용 '핵심 명사'만 추출 (Condense & Clean)
+        clean_query_prompt = f"""
+        사용자 질문: "{query}"
+        위 질문에서 '알려줘', '설명해줘', '알려주세요' 같은 조기 서술어를 제외하고,
+        지식 베이스 검색에 필요한 핵심 전문 용어(명사)만 한 단어로 추출해줘.
+        추출된 단어: """
+
+        refined_query = self.llm.invoke(clean_query_prompt).content.strip()
+        print(f"🧹 [Refine] 검색어 정제: {query} -> {refined_query}")
+        
+        # 2. 정제된 키워드로 임베딩 및 Neo4j 검색 수행
         query_vector = self.embedder.get_embedding(refined_query)
         raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2)
-        return self.retriever.format_context_for_llm(raw_results)
+        
+        # 3. 유사도가 너무 낮은 결과는 무시하는 로직 추가 가능
+        results = [r for r in raw_results if r.score > 0.7] 
+        
+        return self.retriever.format_context_for_llm(results)
 
     def _get_refined_context(self, x):
         """
