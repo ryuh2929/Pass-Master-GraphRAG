@@ -95,7 +95,7 @@ NEO4J_PASSWORD=your_password
 OPENAI_API_KEY=your_openai_api_key
 ```
 
-### 🐉 Step 5: 앱 실행🐉🦖🦕
+### 🐉 Step 5: 앱 실행
 ```bash
 uv run streamlit run app.py
 
