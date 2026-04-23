@@ -138,31 +138,52 @@ class PassMasterChain:
         # 간단한 구현을 위해 여기서는 현재 질문을 사용하되, 검색 퀄리티를 위해 로그 확인
         # 1. 여기서 history를 직접 제어합니다. (최근 2개 메시지만 참조)
         # x['history']는 RunnableWithMessageHistory가 주입해줍니다.
-        recent_history = x.get("history", [])[-2:] # 직전 문답만 참고
         user_query = x["question"]
+        recent_history = x.get("history", [])[-2:] # 직전 문답만 참고
 
-        # 2. 질문 재구성 (Condense)
-        condense_prompt = f"""
-        이전 대화: {recent_history}
-        현재 질문: {user_query}
+        # 이전 대화 기록이 없으면 바로 검색
+        if not recent_history:
+            return self._execute_vector_search(user_query)
+
+        # 2. LLM에게 검색 필요성 판단
+        decision_prompt = f"""
+        당신은 데이터 검색 전문가입니다.
         
-        위 대화를 바탕으로:
-        1. 새로운 지식 검색이 필요하면 'SEARCH: [키워드]' 형태로 출력해.
-        2. 이전 대화 내용 안에서 충분히 답할 수 있다면 'NO_SEARCH'라고만 출력해.
+        [최근 대화 맥락]
+        {recent_history}
+        
+        [새로운 질문]
+        {user_query}
+        
+        [판단 기준]
+        1. 새로운 질문이 이전 대화에서 설명된 '구체적인 개념'의 정답이나 요약만 요구합니까? -> 'USE_HISTORY'
+        2. 새로운 질문에 이전 대화에 없던 '새로운 용어'나 '개념'이 등장합니까? -> 'SEARCH'
+        3. 이전 대화가 불충분하여 더 자세한 '기출 데이터'가 필요합니까? -> 'SEARCH'
+        
+        답변은 반드시 'USE_HISTORY' 또는 'SEARCH' 둘 중 하나만 출력하십시오.
         """
-        decision = self.llm.invoke(condense_prompt).content.strip()
+        decision = self.llm.invoke(decision_prompt).content.strip()
         
         # 3. 결정에 따른 분기 처리 (데이터 노이즈 차단)
-        if "NO_SEARCH" in decision:
-            print("💡 [Decision] 이전 대화 맥락 활용 (추가 검색 생략)")
-            return "이전 대화 내용을 참고하여 답변하세요." 
+        if "USE_HISTORY" in decision:
+            print("💡 [Decision] 기존 맥락 활용 (History Reuse)")
+            # 이전 대화에서 사용되었던 핵심 지식은 이미 LLM의 History에 있으므로 빈 컨텍스트 전달
+            return "이전 대화의 지식 베이스를 바탕으로 답변하세요."
         
         # 4. 검색이 필요한 경우에만 DB 쿼리 실행
-        search_keyword = decision.replace("SEARCH:", "").strip()
-        print(f"🔎 [Decision] 신규 검색 실행: {search_keyword}")
-        
-        query_vector = self.embedder.get_embedding(search_keyword)
-        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2) # top_k 축소
+        print(f"🔎 [Decision] 지식 베이스 신규 검색 실행")
+        return self._execute_vector_search(user_query, recent_history)
+    
+    def _execute_vector_search(self, query, history=None):
+        """실제 DB 검색을 수행하는 유틸리티 함수"""
+        refined_query = query
+        if history:
+            # 맥락을 섞어 검색어 정제
+            condense_prompt = f"대화: {history}\n질문: {query}\n위 맥락을 포함한 한국어 검색 키워드 한 문장:"
+            refined_query = self.llm.invoke(condense_prompt).content
+
+        query_vector = self.embedder.get_embedding(refined_query)
+        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2)
         return self.retriever.format_context_for_llm(raw_results)
 
     # def _get_session_history(self, session_id: str):
