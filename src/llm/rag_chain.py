@@ -125,12 +125,25 @@ class PassMasterChain:
     #     query_vector = self.embedder.get_embedding(user_query)
     #     raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
     #     return self.retriever.format_context_for_llm(raw_results)
-    
+
     def _get_session_history(self, session_id: str):
         """세션별 대화 기록 반환"""
         if session_id not in self.history_store:
             self.history_store[session_id] = InMemoryChatMessageHistory()
         return self.history_store[session_id]
+        
+    def _execute_vector_search(self, query, history=None):
+        """질문 재구성 후 Vector DB 검색 실행"""
+        refined_query = query
+        if history:
+            # 대화 맥락을 녹여서 더 정확한 검색어 생성 (Condense)
+            condense_prompt = f"대화: {history}\n질문: {query}\n위 내용을 바탕으로 검색 엔진에 넣을 구체적인 한국어 핵심 키워드 한 문장만 생성해줘."
+            refined_query = self.llm.invoke(condense_prompt).content.strip()
+        
+        # 임베딩 및 Neo4j 검색
+        query_vector = self.embedder.get_embedding(refined_query)
+        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2)
+        return self.retriever.format_context_for_llm(raw_results)
 
     def _get_refined_context(self, x):
         """
@@ -170,19 +183,6 @@ class PassMasterChain:
         
         print(f"🔎 [Decision] 키워드는 있으나 검색 필요 판단: {user_query}")
         return self._execute_vector_search(user_query, recent_history)
-    
-    def _execute_vector_search(self, query, history=None):
-        """질문 재구성 후 Vector DB 검색 실행"""
-        refined_query = query
-        if history:
-            # 대화 맥락을 녹여서 더 정확한 검색어 생성 (Condense)
-            condense_prompt = f"대화: {history}\n질문: {query}\n위 내용을 바탕으로 검색 엔진에 넣을 구체적인 한국어 핵심 키워드 한 문장만 생성해줘."
-            refined_query = self.llm.invoke(condense_prompt).content.strip()
-        
-        # 임베딩 및 Neo4j 검색
-        query_vector = self.embedder.get_embedding(refined_query)
-        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2)
-        return self.retriever.format_context_for_llm(raw_results)
 
     # def _get_session_history(self, session_id: str):
     #     # RunnableWithMessageHistory와 쓰려면 객체 구조를 맞춰야 함
