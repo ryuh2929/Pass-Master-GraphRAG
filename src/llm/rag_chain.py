@@ -125,12 +125,43 @@ class PassMasterChain:
     #     query_vector = self.embedder.get_embedding(user_query)
     #     raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
     #     return self.retriever.format_context_for_llm(raw_results)
-    
+
     def _get_session_history(self, session_id: str):
         """세션별 대화 기록 반환"""
         if session_id not in self.history_store:
             self.history_store[session_id] = InMemoryChatMessageHistory()
         return self.history_store[session_id]
+        
+    def _execute_vector_search(self, query, history=None):
+        """
+        질문 재구성 후 Vector DB 검색 실행
+        
+        불용어를 제거하고 핵심 키워드 위주로 검색을 수행하여 
+        '알려줘' 노이즈 현상을 방지함
+        """
+        # 1. LLM을 사용하여 검색용 '핵심 명사'만 추출 (Condense & Clean)
+        clean_query_prompt = f"""
+        사용자 질문: "{query}"
+        위 질문에서 '알려줘', '설명해줘', '알려주세요' 같은 조기 서술어를 제외하고,
+        지식 베이스 검색에 필요한 핵심 전문 용어(명사)만 한 단어로 추출해줘.
+        추출된 단어: """
+
+        refined_query = self.llm.invoke(clean_query_prompt).content.strip()
+        print(f"🧹 [Refine] 검색어 정제: {query} -> {refined_query}")
+        
+        # 2. 정제된 키워드로 임베딩 및 Neo4j 검색 수행
+        query_vector = self.embedder.get_embedding(refined_query)
+        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
+        
+        # 3. 유사도가 너무 낮은 결과는 무시하는 로직 추가 가능
+        threshold = 0.7
+        filtered_results = [r for r in raw_results if r.get('score', 0) > threshold]
+
+        # 결과가 하나도 없으면 LLM이 검색 결과 없음을 인지하도록 빈 값 처리
+        if not filtered_results:
+            return "지식 베이스에서 관련 내용을 찾을 수 없습니다."
+        
+        return self.retriever.format_context_for_llm(filtered_results)
 
     def _get_refined_context(self, x):
         """
@@ -170,19 +201,6 @@ class PassMasterChain:
         
         print(f"🔎 [Decision] 키워드는 있으나 검색 필요 판단: {user_query}")
         return self._execute_vector_search(user_query, recent_history)
-    
-    def _execute_vector_search(self, query, history=None):
-        """질문 재구성 후 Vector DB 검색 실행"""
-        refined_query = query
-        if history:
-            # 대화 맥락을 녹여서 더 정확한 검색어 생성 (Condense)
-            condense_prompt = f"대화: {history}\n질문: {query}\n위 내용을 바탕으로 검색 엔진에 넣을 구체적인 한국어 핵심 키워드 한 문장만 생성해줘."
-            refined_query = self.llm.invoke(condense_prompt).content.strip()
-        
-        # 임베딩 및 Neo4j 검색
-        query_vector = self.embedder.get_embedding(refined_query)
-        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=2)
-        return self.retriever.format_context_for_llm(raw_results)
 
     # def _get_session_history(self, session_id: str):
     #     # RunnableWithMessageHistory와 쓰려면 객체 구조를 맞춰야 함
