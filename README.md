@@ -10,7 +10,7 @@
 - **Graph-Centric Retrieval**: Neo4j Graph DB를 활용하여 단편적인 텍스트가 아닌, 개념(Entity)과 관계(Relation) 중심의 심층 답변을 생성합니다.
 - **On-Premise Optimization**: NVIDIA RTX 4070(12GB VRAM) 환경에 최적화된 로컬 추론 엔진(Ollama)을 사용하여 데이터 보안과 빠른 응답성을 확보했습니다.
 - **Intelligent Hybrid Routing**: 사용자의 입력 키워드(방금, 이거 등)를 분석하여 '이전 대화 활용'과 '신규 검색' 사이의 최적의 경로를 결정합니다.
-- **Semantic Noise Cleaning**: 검색 전 LLM이 불용어를 제거하고 핵심 전문 용어(명사)만 정제하여 벡터 검색의 정확도를 극대화합니다.
+- **Semantic Noise Cleaning**: 검색 전 LLM이 불용어(Stopwords)를 제거하고 핵심 전문 용어(명사)만 정제하여 벡터 검색의 정확도를 극대화합니다.
 - **Interactive Answer Masking**: Streamlit UI에서 정답을 검은색 박스로 마스킹 처리하여, 사용자가 드래그를 통해 정답을 확인하는 능동적 학습 기능을 지원합니다.
 
 ---
@@ -39,7 +39,7 @@
 
 1. **User Input**: 사용자가 질문을 입력합니다.
 2. **Hard Logic Routing**: 입력어 내 특정 키워드(방금, 다시 등)를 검사하여 대화 맥락 활용 여부를 1차 판정합니다.
-3. **Query Refinement**: 검색이 결정되면 LLM이 불용어(stopword)를 제거하고 검색용 핵심 키워드를 정제합니다.
+3. **Query Refinement**: 검색이 결정되면 LLM이 불용어(Stopwords)를 제거하고 검색용 핵심 키워드를 정제합니다.
 4. **Graph-Vector Retrieval**: 정제된 키워드로 벡터 유사도 검색과 그래프 관계 탐색을 병행하여 Neo4j에서 관련 개념과 기출문제를 추출합니다.
 5. **Answer Generation**: 추출된 지식과 필요시 대화 이력을 결합하여 'Pass-Master' 페르소나로 답변을 생성합니다.
 6. **UI Rendering**: 정답 마스킹 처리된 답변을 Streamlit 화면에 송출합니다.
