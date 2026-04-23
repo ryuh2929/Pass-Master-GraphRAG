@@ -1,4 +1,61 @@
-# Pass-Master-GraphRAG
+# 🎓 Pass-Master-GraphRAG
+> GraphRAG 기반 정보처리기사 자격증 실기 AI 튜터
+
+**Pass-Master-GraphRAG**는 정보처리기사 실기 학습을 돕는 로컬 기반의 **GraphRAG** 시스템입니다. 단순한 문서 검색을 넘어, **Neo4j** 지식 그래프를 통해 개념 간의 유기적 관계를 파악하고 사용자에게 정확한 기출 데이터와 학습 맥락을 제공합니다.
+
+---
+
+## 🚀 Key Features
+
+- **Graph-Centric Retrieval**: Neo4j Graph DB를 활용하여 단편적인 텍스트가 아닌, 개념(Entity)과 관계(Relation) 중심의 심층 답변을 생성합니다.
+- **On-Premise Optimization**: NVIDIA RTX 4070(12GB VRAM) 환경에 최적화된 로컬 추론 엔진(Ollama)을 사용하여 데이터 보안과 빠른 응답성을 확보했습니다.
+- **Intelligent Hybrid Routing**: 사용자의 입력 키워드(방금, 이거 등)를 분석하여 '이전 대화 활용'과 '신규 검색' 사이의 최적의 경로를 결정합니다.
+- **Semantic Noise Cleaning**: 검색 전 LLM이 불용어를 제거하고 핵심 전문 용어(명사)만 정제하여 벡터 검색의 정확도를 극대화합니다.
+- **Interactive Answer Masking**: Streamlit UI에서 정답을 검은색 박스로 마스킹 처리하여, 사용자가 드래그를 통해 정답을 확인하는 능동적 학습 기능을 지원합니다.
+
+---
+
+## 🛠 Tech Stack
+
+### 🔹 Language & Environment
+* **Python 3.14.0+**: 메인 개발 언어 및 데이터 전처리 엔진
+* **python-dotenv**: 보안을 위한 환경 변수 및 API Key 관리
+* **pdfplumber**: PDF 텍스트 추출 및 데이터 구조화
+* **uv**: 초고속 패키지 관리 및 일관된 가상환경 보장
+
+### 🔹 AI & Data Pipeline
+* **LLM (Ollama - Llama3-8B)**: 로컬 환경에서 구동되는 고성능 추론 모델
+* **Embedding (HuggingFace/TEI)**: 지식 벡터화를 위한 로컬 임베딩 엔진
+* **Graph DB (Neo4j)**: 개념 간의 관계형 지식 저장 및 복합 검색(Graph Search)
+* **Orchestration (LangChain)**: LCEL을 활용한 지능형 RAG Chain 설계
+
+### 🔹 Deployment & UI
+* **Frontend (Streamlit)**: 마스킹 기능과 실시간 스트리밍 답변을 지원하는 웹 인터페이스
+* **Version Control**: Git / GitHub를 통한 브랜치 기반 데이터 격리 및 형상 관리
+
+---
+
+## 🏗 System Workflow
+
+1. **User Input**: 사용자가 질문을 입력합니다.
+2. **Hard Logic Routing**: 입력어 내 특정 키워드(방금, 다시 등)를 검사하여 대화 맥락 활용 여부를 1차 판정합니다.
+3. **Query Refinement**: 검색이 결정되면 LLM이 불용어(stopword)를 제거하고 검색용 핵심 키워드를 정제합니다.
+4. **Graph-Vector Retrieval**: 정제된 키워드로 벡터 유사도 검색과 그래프 관계 탐색을 병행하여 Neo4j에서 관련 개념과 기출문제를 추출합니다.
+5. **Answer Generation**: 추출된 지식과 필요시 대화 이력을 결합하여 'Pass-Master' 페르소나로 답변을 생성합니다.
+6. **UI Rendering**: 정답 마스킹 처리된 답변을 Streamlit 화면에 송출합니다.
+
+---
+
+## 💻 Installation & Setup
+
+### Prerequisites
+- uv (권장)
+- Neo4j Database
+- Ollama (Llama3 모델 로드 완료)
+- Docker
+
+### Setup
+```bash
 ### uv 사용자
 uv sync
 
@@ -30,6 +87,25 @@ docker-compose logs
 docker-compose restart
 ```
 
+## 앱 실행
+```bash
+uv run streamlit run app.py
+# 또는
+streamlit run app.py
+```
+
+---
+
+📝 Configuration (.env)
+프로젝트 루트에 .env 파일을 생성하고 다음 정보를 설정해야 합니다.
+
+```
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password
+LLM_MODEL=llama3:latest
+OLLAMA_HOST=http://localhost:11434
+```
 ---
 
 ## 📝 트러블슈팅
