@@ -25,7 +25,7 @@ st.markdown("""
 
 # 2. 체인 인스턴스 초기화 (세션 스테이트 활용하여 1회만 로드)
 if "rag_chain" not in st.session_state:
-    with st.spinner("🚀 Pass-Master 엔진 로드 중... (RTX 4070 준비)"):
+    with st.spinner("🚀 Pass-Master 엔진 로드 중..."):
         st.session_state.rag_chain = PassMasterChain()
         st.session_state.messages = [] # 대화 기록 저장용
 
