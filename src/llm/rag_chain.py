@@ -12,10 +12,16 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from src.retrieval.embedder import TEIEmbedder
 from src.retrieval.graph import GraphRetriever
 
+from factory.llm_factory import get_llm
+
 load_dotenv()
 
 class PassMasterChain:
     def __init__(self):
+        # 지휘자는 엔진이 무엇인지 몰라도 '말'만 통하면 됩니다 (LangChain 인터페이스)
+        self.llm = get_llm() 
+        self.chain = self.prompt | self.llm | self.output_parser
+        
         # 1. 원본 컴포넌트 로드
         self.embedder = TEIEmbedder()
         self.retriever = GraphRetriever(
