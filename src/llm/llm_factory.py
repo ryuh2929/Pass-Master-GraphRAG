@@ -4,17 +4,17 @@ from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
 def get_llm():
-    provider = os.getenv("LLM_PROVIDER", "ollama").lower()
+    model_name = os.getenv("LLM_MODEL", "llama3:latest")
     
-    if provider == "openai":
+    if "openai" in model_name.lower():
         # OpenAI 엔진 반환
         return ChatOpenAI(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+            model="gpt-4o", # 실제 사용할 OpenAI 모델명
             api_key=os.getenv("OPENAI_API_KEY")
         )
     else:
         # 로컬 Ollama 엔진 반환
         return ChatOllama(
-            model=os.getenv("OLLAMA_MODEL", "llama3"),
-            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+            model=model_name,
+            base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434")
         )
