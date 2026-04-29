@@ -168,3 +168,6 @@ uv, docker, 온프레미스(하이브리드)
 
 ## 결과 검증 방법 (모델 차이, 개선시 향상도)
 Rouge, BLEU
+
+## feat/openai-llm-switching 브랜치
+llm_factory.py에서 .env의 llm 모델 (openai, ollama) 선택에 따라 llm 모델 불러오기
