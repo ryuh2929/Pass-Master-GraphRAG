@@ -12,7 +12,7 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from src.retrieval.embedder import TEIEmbedder
 from src.retrieval.graph import GraphRetriever
 
-from llm.llm_factory import get_llm
+from src.llm.llm_factory import get_llm
 
 load_dotenv()
 
