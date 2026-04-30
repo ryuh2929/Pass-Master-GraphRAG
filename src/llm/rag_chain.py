@@ -18,10 +18,6 @@ load_dotenv()
 
 class PassMasterChain:
     def __init__(self):
-        # 지휘자는 엔진이 무엇인지 몰라도 '말'만 통하면 됩니다 (LangChain 인터페이스)
-        self.llm = get_llm() 
-        self.chain = self.prompt | self.llm | self.output_parser
-        
         # 1. 원본 컴포넌트 로드
         self.embedder = TEIEmbedder()
         self.retriever = GraphRetriever(
@@ -30,13 +26,9 @@ class PassMasterChain:
             password=os.getenv("NEO4J_PASSWORD", "password")
         )
         
-        # 2. LangChain용 LLM 설정 (ChatOllama 사용)
-        self.llm = ChatOllama(
-            model=os.getenv("LLM_MODEL", "llama3:latest"),
-            base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-            temperature=0.1 # 분석가용 사실 중심 답변 설정
-        )
-
+        # 2. LangChain용 LLM 설정 (ChatOllama 혹은 ChatOpenAI 사용)
+        self.llm = get_llm() 
+        
         # 3. 대화 기록 저장소 (세션별 관리)
         self.history_store = {} 
 
@@ -71,7 +63,9 @@ class PassMasterChain:
         ])
 
         # 검색용 질문을 재구성하는 체인
-        self.condense_chain = self.condense_question_prompt | self.llm | StrOutputParser()
+        # self.condense_chain = self.condense_question_prompt | self.llm | StrOutputParser()
+
+        # self.chain = self.prompt | self.llm | self.output_parser
 
         # 메인 RAG 체인
         base_chain = (
