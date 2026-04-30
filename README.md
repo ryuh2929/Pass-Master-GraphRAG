@@ -63,7 +63,11 @@ pip install -r requirements.txt
 
 ### 🐳 Step 2: Docker Compose 실행
 ```bash
+# openai 이용시
 docker-compose up -d
+
+# local 환경에서 ollama 이용시
+docker-compose --profile local up -d
 ```
 
 모델 다운로드 및 neo4j 실행에 시간이 걸립니다.
@@ -97,6 +101,7 @@ OPENAI_API_KEY=your_api_key_here
 
 ### 🐉 Step 5: 앱 실행
 ```bash
+# uv 사용자
 uv run streamlit run app.py
 
 # 또는 가상환경 실행 후 실행 (pip 사용자일 경우)
@@ -171,3 +176,5 @@ Rouge, BLEU
 
 ## feat/openai-llm-switching 브랜치
 llm_factory.py에서 .env의 llm 모델 (openai, ollama) 선택에 따라 llm 모델 불러오기
+rag_chain 수정 (쓸모없어진 코드 나중에 정리)
+docker-compose.yml에 profiles 추가 (profiles 있는 서비스는 명시적으로 호출할 때만 켜짐)
