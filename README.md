@@ -177,4 +177,5 @@ Rouge, BLEU
 ## feat/openai-llm-switching 브랜치
 llm_factory.py에서 .env의 llm 모델 (openai, ollama) 선택에 따라 llm 모델 불러오기
 rag_chain 수정 (쓸모없어진 코드 나중에 정리)
+
 docker-compose.yml에 profiles 추가 (profiles 있는 서비스는 명시적으로 호출할 때만 켜짐)
