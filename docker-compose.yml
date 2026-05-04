@@ -11,19 +11,14 @@ services:
       - ollama_data:/root/.ollama
     runtime: nvidia
     environment:
-      - OLLAMA_MAX_LOADED_MODELS=2
+      - OLLAMA_MAX_LOADED_MODELS=1
       # - OLLAMA_KEEP_ALIVE=1m
       - NVIDIA_VISIBLE_DEVICES=all
     # 💡 entrypoint 추가: 서버 실행 -> 잠시 대기(서버 부팅 시간) -> 모델 풀 -> 프로세스 유지
-    entrypoint: 
-      - "/bin/sh"
-      - "-c"
-      - |
-        ollama serve & 
-        sleep 5;
-        echo "📥 Checking/Downloading Llama3 model...";
-        ollama pull llama3;
-        wait
+    # 💡 llama3 모델
+    # entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 10 && ollama pull llama3 && wait"]
+    # 💡 exaone3.5 모델
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 10 && ollama pull exaone3.5:7.8b && wait"]
     deploy:
       resources:
         reservations:
