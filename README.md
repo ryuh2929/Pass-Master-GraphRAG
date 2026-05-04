@@ -77,7 +77,7 @@ neo4j 상태 로그 확인
 docker-compose logs -f neo4j --tail 12
 ```
 
-### 🧠 Step 3: 모델 수동 로드 (entrypoint가 동작하지 않을 때만 최초 1회 실행)
+### 🧠 Step 3: 모델 수동 로드 (도커를 실행했을 때 모델이 자동으로 다운되지 않았을 경우 실행)
 ```bash
 docker exec -it ollama ollama pull llama3
 ```
