@@ -37,7 +37,7 @@ class GraphDataManager:
         SET e.practical_dates = $practical_dates, e.url = $url
         WITH e
         UNWIND $problems AS prob
-        MERGE (q:Question {id: $year + "_" + $round + "_" + prob.no})
+        MERGE (q:Question {problem_id: $year + "_" + $round + "_" + prob.no})
         SET q.no = prob.no, 
             q.question = prob.question, 
             q.answer = prob.answer
@@ -62,7 +62,7 @@ class GraphDataManager:
         MERGE (ch:Chapter {name: chunk.metadata.chapter})
         
         // 2. Concept 노드 생성
-        MERGE (c:Concept {id: chunk.metadata.id})
+        MERGE (c:Concept {section_id: chunk.metadata.id})
         SET c.title = chunk.metadata.title,
             c.document = chunk.document,
             c.importance = chunk.metadata.importance,
