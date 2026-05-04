@@ -134,7 +134,7 @@ docker-compose logs
 docker-compose restart
 ```
 
-### neo4j 명령어
+### 🕸️ neo4j 명령어
 초기화
 ```
 MATCH (n) DETACH DELETE n;
