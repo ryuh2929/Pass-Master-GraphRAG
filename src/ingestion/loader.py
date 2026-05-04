@@ -96,18 +96,18 @@ class GraphDataManager:
     def embed_nodes(self):
         """Question과 Concept 노드에 임베딩을 추가합니다."""
         # Concept 노드 임베딩
-        concepts = self.graph.query("MATCH (c:Concept) WHERE c.embedding IS NULL RETURN c.id as id, c.document as text")
+        concepts = self.graph.query("MATCH (c:Concept) WHERE c.embedding IS NULL RETURN c.section_id as id, c.document as text")
         for rec in concepts:
             vector = self.get_embedding(rec['text'])
             if vector:
-                self.graph.query("MATCH (c:Concept {id: $id}) CALL db.create.setNodeVectorProperty(c, 'embedding', $vector)", 
+                self.graph.query("MATCH (c:Concept {section_id: $id}) CALL db.create.setNodeVectorProperty(c, 'embedding', $vector)", 
                                  {"id": rec['id'], "vector": vector})
         
         # Question 노드: 본문과 정답을 결합하여 정보량 증대
         questions = self.graph.query("""
             MATCH (q:Question) 
             WHERE q.embedding IS NULL 
-            RETURN q.id as id, q.question as question, q.answer as answer
+            RETURN q.problem_id as id, q.question as question, q.answer as answer
         """)
         
         for rec in questions:
@@ -117,7 +117,7 @@ class GraphDataManager:
             
             if vector:
                 self.graph.query("""
-                    MATCH (q:Question {id: $id}) 
+                    MATCH (q:Question {problem_id: $id}) 
                     CALL db.create.setNodeVectorProperty(q, 'embedding', $vector)
                 """, {"id": rec['id'], "vector": vector})
         print("✅ 모든 노드 벡터화 완료")
@@ -148,11 +148,11 @@ class GraphDataManager:
         
         // 문제(q)별로 가장 점수가 높은 개념(c) 하나만 남기기
         WITH q, c, score
-        ORDER BY q.id, score DESC
+        ORDER BY q.problem_id, score DESC
         WITH q, collect({concept: c, score: score})[0] AS best_match
 
         // 최종적으로 검증된 연결만 생성
-        MATCH (target:Concept {id: best_match.concept.id})
+        MATCH (target:Concept {section_id: best_match.concept.section_id})
         MERGE (q)-[r:VERIFIED_MENTIONS]->(target)
         SET r.similarity_score = best_match.score
         RETURN count(r) as link_count
