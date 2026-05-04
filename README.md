@@ -134,6 +134,11 @@ docker-compose logs
 docker-compose restart
 ```
 
+### neo4j 명령어
+초기화
+```
+MATCH (n) DETACH DELETE n;
+```
 ---
 
 ## 🔗 neo4j Browser 주소
