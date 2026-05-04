@@ -101,10 +101,10 @@ OPENAI_API_KEY=your_api_key_here
 
 ### 🐉 Step 5: 앱 실행
 ```bash
-# uv 사용자
+### uv 사용자
 uv run streamlit run app.py
 
-# 또는 가상환경 실행 후 실행 (pip 사용자일 경우)
+### pip 사용자일 경우 (가상환경 실행 후 실행)
 source .venv/Scripts/activate
 streamlit run app.py
 ```
