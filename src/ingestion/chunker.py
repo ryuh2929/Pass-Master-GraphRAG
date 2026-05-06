@@ -1,5 +1,4 @@
 import pdfplumber
-import glob
 import re
 import json
 import os
