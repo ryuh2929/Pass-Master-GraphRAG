@@ -1,5 +1,6 @@
 import streamlit as st
 from src.llm.rag_chain import PassMasterChain
+import time
 
 # 1. 페이지 설정 및 다크모드 최적화 커스텀 CSS
 st.set_page_config(page_title="Pass-Master: 자격증 합격 튜터", layout="wide")
