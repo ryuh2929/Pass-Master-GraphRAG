@@ -196,5 +196,8 @@ BM25 점수와 벡터 점수를 7:3 정도로 섞으면, 특정 키워드(JAVA, 
 RAG 답변 생성 시 LLM에게 다음과 같은 지침을 줍니다.
 "참조된 컨텍스트 중 사용자의 질문과 프로그래밍 언어가 다른 정보는 무시하고 답변하세요."
 
+## LLM 모델 변경
+llama3 -> exaone3.5:7.8b -> gemma4:e4b
+
 ## Streamlit 페이지에서 로딩 문구 출력
 콜백? generator + yeild? st.session_state + rerun?
