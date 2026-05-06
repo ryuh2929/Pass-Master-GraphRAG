@@ -59,18 +59,26 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소
 
     # Pass-Master 답변 생성
     with st.chat_message("assistant"):
-        # st.status를 사용하여 단계별 문구 변경
-        with st.status("🚀 분석 시작...", expanded=True) as status:
-            st.write("🔍 bge-m3 모델로 관련 지식을 검색하고 있습니다...")
-            # 실제 내부 로직과 동기화 전까지는 시각적 피드백을 위해 status.update 활용 가능
-            # 예: response = st.session_state.rag_chain.run(prompt, status=status) 
+        response = "" # 결과값 담을 변수
+        # 1. status 선언
+        with st.status("🚀 분석 준비 중...", expanded=True) as status:
+            # 2. 제너레이터 루프 실행
+            # chain.run 대신 chain.run_stream 호출
+            # 제너레이터 호출
+            stream = st.session_state.rag_chain.run_stream(prompt)
             
-            # 아래는 UI 흐름을 보여주기 위한 시뮬레이션 문구 업데이트입니다.
-            # 실제 PassMasterChain.run()이 내부에서 status를 제어하도록 수정하면 더욱 정확합니다.
-            response = st.session_state.rag_chain.run(prompt) 
+            for msg in stream:
+                # 1. 마지막 답변인지 중간 문구인지 판별
+                # 보통 답변은 문구가 길고 '중...'으로 끝나지 않음
+                if isinstance(msg, str) and len(msg) < 100 and any(keyword in msg for keyword in ["중...", "로드", "추출"]):
+                    status.update(label=msg)
+                else:
+                    # 마지막으로 들어온 긴 텍스트가 최종 답변
+                    response = msg
             
             status.update(label="✅ 분석 완료!", state="complete", expanded=False)
-        # LLM 답변 내 HTML 태그가 동작하도록 unsafe_allow_html 적용
+        
+        # 3. 최종 결과 화면 출력
         st.markdown(response, unsafe_allow_html=True)
             
     st.session_state.messages.append({"role": "assistant", "content": response})
