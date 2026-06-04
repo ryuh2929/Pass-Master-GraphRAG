@@ -77,7 +77,7 @@ neo4j 상태 로그 확인
 docker-compose logs -f neo4j --tail 12
 ```
 
-### 🧠 Step 3: 모델 수동 로드 (entrypoint가 동작하지 않을 때만 최초 1회 실행)
+### 🧠 Step 3: 모델 수동 로드 (도커를 실행했을 때 모델이 자동으로 다운되지 않았을 경우 실행)
 ```bash
 docker exec -it ollama ollama pull gemma4:e4b
 ```
@@ -101,10 +101,10 @@ OPENAI_API_KEY=your_api_key_here
 
 ### 🐉 Step 5: 앱 실행
 ```bash
-# uv 사용자
+### uv 사용자
 uv run streamlit run app.py
 
-# 또는 가상환경 실행 후 실행 (pip 사용자일 경우)
+### pip 사용자일 경우 (가상환경 실행 후 실행)
 source .venv/Scripts/activate
 streamlit run app.py
 ```
@@ -134,6 +134,11 @@ docker-compose logs
 docker-compose restart
 ```
 
+### 🕸️ neo4j 명령어
+초기화
+```
+MATCH (n) DETACH DELETE n;
+```
 ---
 
 ## 🔗 neo4j Browser 주소
@@ -143,9 +148,10 @@ http://localhost:7474/browser/
 
 ## 📝 트러블슈팅
 #### **"중첩 구조의 데이터 손실 방지"**
-- 현상: 부모 태그(Question)와 자식 태그(Answer)가 계층 구조로 얽혀 있어, **방문 처리(Visited Check) 시 하위 데이터가 누락**되는 현상 발생
+- 현상: 크롤링 과정에서 웹 페이지의 부모 태그(Question)와 자식 태그(Answer)가 계층 구조로 얽혀 있어, **방문 처리(Visited Check) 시 하위 데이터가 누락**되는 현상 발생
 - 해결: 성능 차이가 미미한 수준(O(N) 유지)이므로, 엄격한 순차 방문 대신 **계층적 재탐색을 허용**하여 데이터 추출의 완전성 확보
 
+#### **"불용어로 인한 의미 왜곡 문제 해결을 위한 LLM 전처리 적용"**
 - 현상: '알려줘' 같은 **불용어(Stopwords) 임베딩 벡터와 유사한 데이터가 답변으로 출력**되어 핵심 키워드에 관한 내용이 아닌 엉뚱한 답변이 출력되는 현상 발생
 - 해결: 질문 입력 전에 **LLM을 통해 불용어 제거**하여 쿼리를 정제하는 단계 추가
 
@@ -179,3 +185,21 @@ llm_factory.py에서 .env의 llm 모델 (openai, ollama) 선택에 따라 llm �
 rag_chain 수정 (쓸모없어진 코드 나중에 정리)
 
 docker-compose.yml에 profiles 추가 (profiles 있는 서비스는 명시적으로 호출할 때만 켜짐)
+
+## 현재 JAVA 코드 문제가 Python 단원이랑 연결되어 있는 문제가 있음
+두 노드의 연결에 관여하는 임베딩 모델의 벡터화 과정 문제로 bm25 기반으로 키워드 일치 여부와 키워드 빈도수에 따른 가중치 로직을 추가해서 해결할 것
+- 전략 A: 하이브리드 가중치 조절 (추천)
+BM25 점수와 벡터 점수를 7:3 정도로 섞으면, 특정 키워드(JAVA, Python, SQL 등)가 명시된 경우 엉뚱한 단원으로 튀는 것을 막을 수 있습니다.
+- 전략 B: 하드 필터링 (Hard Filtering)
+데이터 전처리 단계에서 Chapter 이름이나 Section 제목에 포함된 키워드를 추출하여, 문제 텍스트에 해당 키워드가 없을 경우 유사도 점수를 깎거나 제외하는 로직을 Cypher에 넣는 방식입니다.
+- 전략 C: 프롬프트 앤서링 단계에서의 검증
+RAG 답변 생성 시 LLM에게 다음과 같은 지침을 줍니다.
+"참조된 컨텍스트 중 사용자의 질문과 프로그래밍 언어가 다른 정보는 무시하고 답변하세요."
+
+## LLM 모델 변경
+한국어 성능 문제, 토큰 생성 속도 문제
+
+llama3 -> exaone3.5:7.8b -> gemma4:e4b
+
+## Streamlit 페이지에서 로딩 문구 출력
+콜백? generator + yeild? st.session_state + rerun?

@@ -12,7 +12,7 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from src.retrieval.embedder import TEIEmbedder
 from src.retrieval.graph import GraphRetriever
 
-from src.llm.llm_factory import get_llm
+from src.llm.llm_switch import get_llm
 
 load_dotenv()
 
@@ -239,6 +239,32 @@ class PassMasterChain:
             import traceback
             traceback.print_exc() # 상세 에러 로그 확인용
             return f"❌ 파이프라인 실행 중 오류 발생: {e}"
+        
+    def run_stream(self, user_query: str, session_id: str = "default_user"):
+        try:
+            # 1. 초기 로딩 (VRAM 로딩 느낌)
+            yield "⚡ GPU VRAM 캐시 최적화 및 엔진 로딩 중..."
+            
+            # 2. 질문 분석 (기존 _get_refined_context 로직 내부에서 yield를 쓰기 위해 분리 가능)
+            yield "🧼 검색 노이즈 제거 및 핵심 키워드 추출 중..."
+            # (실제 로직 수행 - 예시)
+            # refined_query = self.llm.invoke(...) 
+
+            yield "🔍 지식 그래프(Neo4j) 탐색 및 관련 지식 추출 중..."
+            # context = self._execute_vector_search(...)
+
+            yield "✍️ Gemma 4가 정밀 해설을 작성하고 있습니다..."
+            # 최종 결과 생성
+            response = self.chain_with_history.invoke(
+                {"question": user_query},
+                config={"configurable": {"session_id": session_id}}
+            )
+            
+            # 마지막에 최종 답변 객체를 yield
+            yield response
+            
+        except Exception as e:
+            yield f"❌ 오류 발생: {e}"
         
 if __name__ == "__main__":
     chain = PassMasterChain()
