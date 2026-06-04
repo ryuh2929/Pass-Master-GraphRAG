@@ -24,7 +24,7 @@
 * **uv**: 초고속 패키지 관리 및 일관된 가상환경 보장
 
 ### 🔹 AI & Data Pipeline
-* **LLM (Ollama - Llama3-8B)**: 로컬 환경에서 구동되는 고성능 추론 모델
+* **LLM (Ollama - Gemma 4)**: 로컬 환경에서 구동되는 고성능 추론 모델
 * **Embedding (HuggingFace/TEI)**: 지식 벡터화를 위한 로컬 임베딩 엔진
 * **Graph DB (Neo4j)**: 개념 간의 관계형 지식 저장 및 복합 검색(Graph Search)
 * **Orchestration (LangChain)**: LCEL을 활용한 지능형 RAG Chain 설계
@@ -79,15 +79,15 @@ docker-compose logs -f neo4j --tail 12
 
 ### 🧠 Step 3: 모델 수동 로드 (entrypoint가 동작하지 않을 때만 최초 1회 실행)
 ```bash
-docker exec -it ollama ollama pull llama3
+docker exec -it ollama ollama pull gemma4:e4b
 ```
 
 ### 🔑 Step 4: 환경 변수 설정 (.env)
 프로젝트 루트에 .env 파일을 생성하고 다음 정보를 설정 (.env.example 수정 후 파일명 변경)
 
 ```
-# llama3:latest | openai 중 선택
-LLM_MODEL=llama3:latest
+# gemma4:e4b | openai 중 선택
+LLM_MODEL=gemma4:e4b
 OLLAMA_HOST=http://localhost:11434
 
 # Neo4j

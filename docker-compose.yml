@@ -21,8 +21,8 @@ services:
       - |
         ollama serve & 
         sleep 5;
-        echo "📥 Checking/Downloading Llama3 model...";
-        ollama pull llama3;
+        echo "📥 Checking/Downloading Gemma 4 model...";
+        ollama pull gemma4:e4b;
         wait
     deploy:
       resources:
