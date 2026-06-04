@@ -4,7 +4,7 @@ from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
 def get_llm():
-    model_name = os.getenv("LLM_MODEL", "llama3:latest")
+    model_name = os.getenv("LLM_MODEL", "gemma4:e4b")
     target_temp = 0.1
     
     if "openai" in model_name.lower():

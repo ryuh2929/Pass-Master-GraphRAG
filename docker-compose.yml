@@ -49,7 +49,6 @@ services:
 
   tei:
     image: ghcr.io/huggingface/text-embeddings-inference:latest
-    profiles: ["local"]  # 'local' 프로필 지정
     deploy:
       resources:
         reservations:
