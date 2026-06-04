@@ -33,6 +33,7 @@ services:
   neo4j:
     image: neo4j:5.18
     container_name: passmaster-neo4j
+    hostname: passmaster-neo4j
     ports:
       - "7474:7474"   # 브라우저 UI
       - "7687:7687"   # Bolt (앱 연결)
@@ -43,12 +44,11 @@ services:
       - NEO4J_PLUGINS=["apoc"]
       # - NEO4J_dbms_memory_heap_initial_size=512m
       # - NEO4J_dbms_memory_heap_max_size=1G
-      - NEO4J_dbms_memory_pagecache_size=1G
+      - NEO4J_server_memory_pagecache_size=1G
     restart: unless-stopped
 
   tei:
     image: ghcr.io/huggingface/text-embeddings-inference:latest
-    profiles: ["local"]  # 'local' 프로필 지정
     deploy:
       resources:
         reservations:
