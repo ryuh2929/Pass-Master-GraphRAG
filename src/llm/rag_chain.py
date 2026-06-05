@@ -88,6 +88,9 @@ class PassMasterChain:
         
         return self.retriever.format_context_for_llm(filtered_results)
 
+    def _extract_llm_content(self, response):
+        return response.content if hasattr(response, "content") else str(response)
+
     def _get_refined_context(self, x):
         """
         맥락이 포함된 재구성된 질문으로 검색 수행
@@ -161,29 +164,70 @@ class PassMasterChain:
         
     def run_stream(self, user_query: str, session_id: str = "default_user"):
         try:
-            # 1. 초기 로딩 (VRAM 로딩 느낌)
-            yield "⚡ GPU VRAM 캐시 최적화 및 엔진 로딩 중..."
-            
-            # 2. 질문 분석 (기존 _get_refined_context 로직 내부에서 yield를 쓰기 위해 분리 가능)
-            yield "🧼 검색 노이즈 제거 및 핵심 키워드 추출 중..."
-            # (실제 로직 수행 - 예시)
-            # refined_query = self.llm.invoke(...) 
+            history = self._get_session_history(session_id)
+            recent_history = history.messages[-2:]
 
-            yield "🔍 지식 그래프(Neo4j) 탐색 및 관련 지식 추출 중..."
-            # context = self._execute_vector_search(...)
+            yield {"type": "status", "message": "질문 맥락 분석 중..."}
+            context_keywords = ["방금", "그거", "이거", "앞서", "다시", "정답만", "해설만"]
+            is_contextual_request = any(word in user_query for word in context_keywords)
 
-            yield "✍️ Gemma 4가 정밀 해설을 작성하고 있습니다..."
-            # 최종 결과 생성
-            response = self.chain_with_history.invoke(
-                {"question": user_query},
-                config={"configurable": {"session_id": session_id}}
-            )
-            
-            # 마지막에 최종 답변 객체를 yield
-            yield response
+            if is_contextual_request:
+                yield {"type": "status", "message": "이전 대화 재사용 여부 판단 중..."}
+                decision = self.llm.invoke(
+                    build_context_decision_prompt(recent_history, user_query)
+                ).content.strip().upper()
+
+                if "YES" in decision:
+                    print("💡 [Decision] 명시적 키워드 기반 맥락 활용 (History Reuse)")
+                    yield {"type": "status", "message": "이전 대화 맥락 재사용"}
+                    context = "이전 대화 내용을 바탕으로 답변하세요."
+                else:
+                    print(f"🔎 [Decision] 키워드는 있으나 검색 필요 판단: {user_query}")
+                    yield {"type": "status", "message": "새로운 지식 그래프 검색 필요"}
+                    context = None
+            else:
+                print(f"🔎 [Decision] 신규 검색 실행: {user_query}")
+                yield {"type": "status", "message": "신규 검색 경로 선택"}
+                context = None
+
+            if context is None:
+                yield {"type": "status", "message": "검색어 정제 중..."}
+                refined_query = self.llm.invoke(
+                    build_query_refine_prompt(user_query)
+                ).content.strip()
+                print(f"🧹 [Refine] 검색어 정제: {user_query} -> {refined_query}")
+
+                yield {"type": "status", "message": f"검색어 정제 완료: {refined_query}"}
+                yield {"type": "status", "message": "TEI 임베딩 생성 중..."}
+                query_vector = self.embedder.get_embedding(refined_query)
+
+                yield {"type": "status", "message": "Neo4j 지식 그래프 검색 중..."}
+                raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
+
+                yield {"type": "status", "message": "검색 결과 필터링 및 컨텍스트 구성 중..."}
+                threshold = 0.7
+                filtered_results = [r for r in raw_results if r.get('score', 0) > threshold]
+
+                if not filtered_results:
+                    context = "지식 베이스에서 관련 내용을 찾을 수 없습니다."
+                else:
+                    context = self.retriever.format_context_for_llm(filtered_results)
+
+            yield {"type": "status", "message": "LLM 답변 생성 중..."}
+            prompt_value = self.prompt.invoke({
+                "history": history.messages,
+                "context": context,
+                "question": user_query,
+            })
+            response = self._extract_llm_content(self.llm.invoke(prompt_value))
+
+            history.add_user_message(user_query)
+            history.add_ai_message(response)
+
+            yield {"type": "answer", "content": response}
             
         except Exception as e:
-            yield f"❌ 오류 발생: {e}"
+            yield {"type": "answer", "content": f"❌ 오류 발생: {e}"}
         
 if __name__ == "__main__":
     chain = PassMasterChain()
