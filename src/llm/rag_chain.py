@@ -166,6 +166,7 @@ class PassMasterChain:
         try:
             history = self._get_session_history(session_id)
             recent_history = history.messages[-2:]
+            image_paths = []
 
             yield {"type": "status", "message": "질문 맥락 분석 중..."}
             context_keywords = ["방금", "그거", "이거", "앞서", "다시", "정답만", "해설만"]
@@ -212,6 +213,7 @@ class PassMasterChain:
                     context = "지식 베이스에서 관련 내용을 찾을 수 없습니다."
                 else:
                     context = self.retriever.format_context_for_llm(filtered_results)
+                    image_paths = self.retriever.collect_image_paths(filtered_results)
 
             yield {"type": "status", "message": "LLM 답변 생성 중..."}
             prompt_value = self.prompt.invoke({
@@ -224,10 +226,10 @@ class PassMasterChain:
             history.add_user_message(user_query)
             history.add_ai_message(response)
 
-            yield {"type": "answer", "content": response}
+            yield {"type": "answer", "content": response, "images": image_paths}
             
         except Exception as e:
-            yield {"type": "answer", "content": f"❌ 오류 발생: {e}"}
+            yield {"type": "answer", "content": f"❌ 오류 발생: {e}", "images": []}
         
 if __name__ == "__main__":
     chain = PassMasterChain()
