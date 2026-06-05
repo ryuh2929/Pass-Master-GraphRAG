@@ -1,6 +1,5 @@
 import streamlit as st
 from src.llm.rag_chain import PassMasterChain
-import time
 
 # 1. 페이지 설정 및 다크모드 최적화 커스텀 CSS
 st.set_page_config(page_title="Pass-Master: 자격증 합격 튜터", layout="wide")
@@ -60,23 +59,23 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소
     # Pass-Master 답변 생성
     with st.chat_message("assistant"):
         response = "" # 결과값 담을 변수
-        # 1. status 선언
-        with st.status("🚀 분석 준비 중...", expanded=True) as status:
-            # 2. 제너레이터 루프 실행
-            # chain.run 대신 chain.run_stream 호출
-            # 제너레이터 호출
-            stream = st.session_state.rag_chain.run_stream(prompt)
-            
-            for msg in stream:
-                # 1. 마지막 답변인지 중간 문구인지 판별
-                # 보통 답변은 문구가 길고 '중...'으로 끝나지 않음
-                if isinstance(msg, str) and len(msg) < 100 and any(keyword in msg for keyword in ["중...", "로드", "추출"]):
-                    status.update(label=msg)
-                else:
-                    # 마지막으로 들어온 긴 텍스트가 최종 답변
-                    response = msg
-            
-            status.update(label="✅ 분석 완료!", state="complete", expanded=False)
+        status_placeholder = st.empty()
+
+        with status_placeholder.container():
+            with st.status("🚀 분석 준비 중...", expanded=True) as status:
+                stream = st.session_state.rag_chain.run_stream(prompt)
+
+                for event in stream:
+                    if isinstance(event, dict) and event.get("type") == "status":
+                        status.update(label=event["message"])
+                    elif isinstance(event, dict) and event.get("type") == "answer":
+                        response = event["content"]
+                    else:
+                        response = event
+
+                status.update(label="✅ 분석 완료!", state="complete", expanded=False)
+
+        status_placeholder.empty()
         
         # 3. 최종 결과 화면 출력
         st.markdown(response, unsafe_allow_html=True)
