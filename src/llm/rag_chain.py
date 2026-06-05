@@ -2,8 +2,6 @@ import os
 from dotenv import load_dotenv
 
 # LangChain 관련 컴포넌트
-from langchain_ollama import ChatOllama
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
@@ -13,6 +11,12 @@ from src.retrieval.embedder import TEIEmbedder
 from src.retrieval.graph import GraphRetriever
 
 from src.llm.llm_switch import get_llm
+from src.llm.prompts import (
+    build_context_decision_prompt,
+    build_query_refine_prompt,
+    get_condense_question_prompt,
+    get_pass_master_prompt,
+)
 
 load_dotenv()
 
@@ -33,39 +37,8 @@ class PassMasterChain:
         self.history_store = {} 
 
         # 4. 프롬프트 템플릿 구성
-        self.condense_question_prompt = ChatPromptTemplate.from_messages([
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{question}"),
-            ("system", "위 대화를 바탕으로, 지식 베이스에서 검색하기 위한 독립적인 한 문장의 한국어 질문으로 다시 작성해줘. 핵심 키워드를 포함해야 해.")
-        ])
-
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", """당신은 한국어만 사용하는 국가기술자격증 전문 튜터 'Pass-Master'입니다.
-            
-            [반드시 지켜야 할 규칙]
-            1. 모든 답변은 반드시 한국어로 작성하십시오. 영어 사용을 금지합니다.
-            2. 정답과 해설은 반드시 다음 HTML 형식을 사용하십시오: 
-            <span style="color: black; background-color: black;">정답: [내용]</span>
-            3. [학습 지식]에 없는 내용은 절대 지어내지 마십시오. (특히 프로토콜 3요소: 구문, 의미, 타이밍 확인)
-            4. 사용자가 '정답만' 요구하면 다른 설명 없이 문제와 마스킹된 정답만 출력하십시오."""),
-                        MessagesPlaceholder(variable_name="history"), 
-                        ("human", """[학습 지식]
-            {context}
-
-            [사용자 질문]
-            {question}
-
-            ---
-            구조화된 한국어 답변 (질문에 해당하는 내용만):
-            1. 💡 핵심 개념 요약
-            2. 📝 관련 실전 문제 (정답/해설 마스킹 필수)
-            3. 🚀 합격 가이드 (Tip - 반드시 한국어로 작성할 것)""")
-        ])
-
-        # 검색용 질문을 재구성하는 체인
-        # self.condense_chain = self.condense_question_prompt | self.llm | StrOutputParser()
-
-        # self.chain = self.prompt | self.llm | self.output_parser
+        self.condense_question_prompt = get_condense_question_prompt()
+        self.prompt = get_pass_master_prompt(os.getenv("LLM_MODEL"))
 
         # 메인 RAG 체인
         base_chain = (
@@ -83,48 +56,6 @@ class PassMasterChain:
             input_messages_key="question",
             history_messages_key="history"
         )
-        
-        # self.prompt = ChatPromptTemplate.from_messages([
-        #     ("system", """너는 국가기술자격증 합격을 가이드하는 전문 AI 튜터 'Pass-Master'야.
-        #     제공된 [학습 지식]과 이전 대화 맥락을 바탕으로 한국어로 답변해줘."""),
-        # MessagesPlaceholder(variable_name="history"), # 대화 기록이 들어갈 자리
-        #     ("human", """[학습 지식]
-        #     {context}
-             
-        #      [사용자 질문]
-        #     {question}
-
-        #     ---
-        #     반드시 아래 구조로 답변할 것:
-        #     1. 💡 핵심 개념 요약 (중요도/기출날짜 포함)
-        #     2. 📝 관련 실전 문제 (정답/해설은 반드시 검은색 마스킹 HTML 사용)
-        #     3. 🚀 합격 가이드 (Tip)""")
-        # ])
-
-        # # 5. 체인 조립 (LCEL 방식)
-        # base_chain = (
-        #     RunnablePassthrough.assign(
-        #         context=RunnableLambda(lambda x: self._get_graph_context(x["question"]))
-        #     )
-        #     | self.prompt
-        #     | self.llm
-        #     | StrOutputParser()
-        # )
-
-        # # 6. 메모리가 통합된 최종 체인
-        # self.chain_with_history = RunnableWithMessageHistory(
-        #     base_chain,
-        #     get_session_history=self._get_session_history,
-        #     input_messages_key="question",
-        #     history_messages_key="history"
-        # )
-
-    # def _get_graph_context(self, user_query: str) -> str:
-    #     """기존 검색 로직을 LangChain 파이프라인에 이식"""
-    #     """질문을 벡터화하여 Neo4j에서 관련 지식 추출"""
-    #     query_vector = self.embedder.get_embedding(user_query)
-    #     raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
-    #     return self.retriever.format_context_for_llm(raw_results)
 
     def _get_session_history(self, session_id: str):
         """세션별 대화 기록 반환"""
@@ -140,13 +71,7 @@ class PassMasterChain:
         '알려줘' 노이즈 현상을 방지함
         """
         # 1. LLM을 사용하여 검색용 '핵심 명사'만 추출 (Condense & Clean)
-        clean_query_prompt = f"""
-        사용자 질문: "{query}"
-        위 질문에서 '알려줘', '설명해줘', '알려주세요' 같은 조기 서술어를 제외하고,
-        지식 베이스 검색에 필요한 핵심 전문 용어(명사)만 한 단어로 추출해줘.
-        추출된 단어: """
-
-        refined_query = self.llm.invoke(clean_query_prompt).content.strip()
+        refined_query = self.llm.invoke(build_query_refine_prompt(query)).content.strip()
         print(f"🧹 [Refine] 검색어 정제: {query} -> {refined_query}")
         
         # 2. 정제된 키워드로 임베딩 및 Neo4j 검색 수행
@@ -185,15 +110,9 @@ class PassMasterChain:
             return self._execute_vector_search(user_query, recent_history)
 
         # 2. 키워드가 있는 경우, LLM에게 검색 필요성 판단
-        decision_prompt = f"""
-        [이전 대화] {recent_history}
-        [현재 질문] {user_query}
-        
-        질문이 이전 대화에 나온 내용의 '정답'이나 '부연 설명'만을 요구합니까?
-        그렇다면 'YES', 새로운 정보 검색이 필요해 보인다면 'NO'라고만 답하세요.
-        답변: """
-        
-        decision = self.llm.invoke(decision_prompt).content.strip().upper()
+        decision = self.llm.invoke(
+            build_context_decision_prompt(recent_history, user_query)
+        ).content.strip().upper()
 
         if "YES" in decision:
             print("💡 [Decision] 명시적 키워드 기반 맥락 활용 (History Reuse)")

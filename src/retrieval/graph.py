@@ -22,10 +22,10 @@ class GraphRetriever:
         // 해당 개념과 VERIFIED_MENTIONS로 연결된 기출문제들을 수집
         OPTIONAL MATCH (q:Question)-[:VERIFIED_MENTIONS]->(c)
         WITH c, score, q
-        ORDER BY q.id  // 문제 번호순 정렬(선택 사항)
+        ORDER BY q.problem_id  // 문제 번호순 정렬(선택 사항)
         
         WITH c, score, collect({
-            id: q.id, 
+            id: q.problem_id, 
             question: q.question, 
             answer: q.answer
         })[..3] AS related_questions
