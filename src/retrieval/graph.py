@@ -1,5 +1,3 @@
-import random
-
 from langchain_neo4j import Neo4jGraph
 
 class GraphRetriever:
@@ -67,24 +65,35 @@ class GraphRetriever:
             ]
 
             if related_questions:
-                sample_size = min(3, len(related_questions))
-                sampled_questions = random.sample(related_questions, sample_size)
+                sorted_questions = sorted(
+                    related_questions,
+                    key=self._question_sort_key,
+                    reverse=True
+                )
+                default_questions = sorted_questions[:3]
 
                 part += f"- 관련 기출 문제 수: {len(related_questions)}개\n"
-                part += "- 기본 표시 후보(사용자가 전체 보기를 요청하지 않았을 때 이 목록에서만 최대 3개 출력):\n"
-                for q in sampled_questions:
+                part += "- 기본 표시 후보(사용자가 전체 보기를 요청하지 않았을 때 최신 기출부터 최대 3개 출력):\n"
+                for q in default_questions:
                     image_note = f" (이미지 토큰: [[IMAGE:{q['id']}]] )" if q.get("images") else ""
                     part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']}){image_note}\n"
 
-                if len(related_questions) > sample_size:
+                if len(sorted_questions) > len(default_questions):
                     part += "- 전체 관련 기출 목록(사용자가 전체/전부/모두 보기를 요청했을 때만 모두 출력):\n"
-                    for q in related_questions:
+                    for q in sorted_questions:
                         image_note = f" (이미지 토큰: [[IMAGE:{q['id']}]] )" if q.get("images") else ""
                         part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']}){image_note}\n"
             
             context_parts.append(part)
             
         return "\n\n".join(context_parts)
+
+    def _question_sort_key(self, question: dict):
+        try:
+            year, round_no, question_no = str(question["id"]).split("_")
+            return int(year), int(round_no), int(question_no)
+        except (KeyError, ValueError):
+            return 0, 0, 0
 
     def collect_image_paths(self, search_results: list) -> dict[str, list[str]]:
         """검색 결과에 포함된 관련 기출 이미지 경로를 문제 ID별로 수집합니다."""
