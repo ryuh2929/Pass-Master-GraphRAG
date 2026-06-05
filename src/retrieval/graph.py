@@ -32,8 +32,11 @@ class GraphRetriever:
         }) AS related_questions
         
         RETURN 
+            c.section_id AS section_id,
             c.title AS title, 
             c.document AS content, 
+            c.importance AS importance,
+            c.practical_dates AS practical_dates,
             score, 
             related_questions
         """
@@ -56,7 +59,12 @@ class GraphRetriever:
         for i, res in enumerate(search_results):
             # 유사도 점수를 함께 표기하여 분석 시 참고 가능하게 구성
             part = f"### 관련 지식 {i+1} (유사도: {res['score']:.4f})\n"
+            part += f"- ID: {res.get('section_id')}\n"
             part += f"- 주요 개념: {res['title']}\n"
+            part += f"- 중요도: {res.get('importance')}\n"
+            practical_dates = res.get('practical_dates') or []
+            part += f"- 실기 출제 횟수: {len(practical_dates)}회\n"
+            part += f"- 실기 출제 날짜: {', '.join(practical_dates) if practical_dates else '없음'}\n"
             part += f"- 상세 설명: {res['content']}\n"
             
             related_questions = [
