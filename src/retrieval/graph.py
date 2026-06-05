@@ -52,7 +52,7 @@ class GraphRetriever:
         self,
         search_results: list,
         question_offset: int = 0,
-        question_limit: int = 3
+        question_limit: int | None = 3
     ) -> str:
         """
         추출된 리스트 데이터를 LLM 프롬프트에 주입할 텍스트 형식으로 변환합니다.
@@ -92,13 +92,16 @@ class GraphRetriever:
         self,
         search_results: list,
         question_offset: int = 0,
-        question_limit: int = 3
+        question_limit: int | None = 3
     ) -> str:
         questions = self.get_sorted_related_questions(search_results, primary_only=True)
         if not questions:
             return ""
 
-        page_questions = questions[question_offset:question_offset + question_limit]
+        if question_limit is None:
+            page_questions = questions[question_offset:]
+        else:
+            page_questions = questions[question_offset:question_offset + question_limit]
         remaining_count = max(len(questions) - (question_offset + len(page_questions)), 0)
         start_no = question_offset + 1
         end_no = question_offset + len(page_questions)
@@ -107,50 +110,18 @@ class GraphRetriever:
         part += f"- 관련 기출 문제 수: {len(questions)}개\n"
         part += f"- 현재 표시 범위: {start_no}~{end_no}번째 최신 기출\n"
         part += f"- 남은 기출 문제 수: {remaining_count}개\n"
+        part += f"- 기본 표시 후보: 아래 {len(page_questions)}개 문제를 답변에 모두 출력해야 함\n"
 
-        for q in page_questions:
-            image_note = f" (이미지 토큰: [[IMAGE:{q['id']}]] )" if q.get("images") else ""
-            part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']}){image_note}\n"
+        for index, q in enumerate(page_questions, start=start_no):
+            part += f"\n#### {index}. [문제 {q['id']}]\n"
+            part += "[문제 원문]\n"
+            part += f"{q['question']}\n"
+            if q.get("images"):
+                part += f"[이미지 토큰]\n[[IMAGE:{q['id']}]]\n"
+            part += "[정답 원문]\n"
+            part += f"{q['answer']}\n"
 
         return part
-
-    def format_questions_for_answer(
-        self,
-        search_results: list,
-        question_offset: int = 0,
-        question_limit: int | None = 3
-    ) -> str:
-        """더보기 응답에서 LLM을 거치지 않고 기출 문제 원문만 출력합니다."""
-        questions = self.get_sorted_related_questions(search_results, primary_only=True)
-        if not questions:
-            return "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
-
-        if question_limit is None:
-            page_questions = questions[question_offset:]
-        else:
-            page_questions = questions[question_offset:question_offset + question_limit]
-
-        if not page_questions:
-            return "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
-
-        lines = ["### 실제 기출 문제"]
-        for index, question in enumerate(page_questions, start=question_offset + 1):
-            question_id = question.get("id", "unknown")
-            question_text = str(question.get("question") or "").rstrip()
-            answer_text = str(question.get("answer") or "").rstrip()
-
-            lines.append(f"#### {index}. [문제 {question_id}]")
-            lines.append("[문제]")
-            lines.append(question_text)
-
-            if question.get("images"):
-                lines.append(f"[[IMAGE:{question_id}]]")
-
-            if answer_text:
-                lines.append("[정답]")
-                lines.append(answer_text)
-
-        return "\n\n".join(lines)
 
     def get_sorted_related_questions(
         self,
