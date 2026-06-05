@@ -116,62 +116,6 @@ class PassMasterChain:
         )
         return f"{response}\n\n{notice}"
 
-    def _merge_question_section(self, response: str, question_section: str) -> str:
-        if not question_section:
-            return response
-
-        # 문제 개수/순서/이미지 매칭은 코드가 만든 원문 섹션으로 고정한다.
-        response = re.sub(
-            r"\n*#{0,3}\s*\[?실제 기출 문제\]?.*?(?=\n*#{0,3}\s*\[?합격 포인트\]?|$)",
-            "\n\n",
-            response,
-            flags=re.DOTALL,
-        ).rstrip()
-
-        pass_point_match = re.search(
-            r"(\n*#{0,3}\s*\[?합격 포인트\]?.*)",
-            response,
-            flags=re.DOTALL,
-        )
-        if pass_point_match:
-            before_pass_point = response[:pass_point_match.start()].rstrip()
-            pass_point = pass_point_match.group(1).lstrip()
-            return f"{before_pass_point}\n\n{question_section}\n\n{pass_point}".strip()
-
-        return f"{response}\n\n{question_section}".strip()
-
-    def _build_question_only_response(
-        self,
-        session_id: str,
-        page_state: dict,
-        include_all_remaining: bool = False
-    ) -> tuple[str, dict, int]:
-        filtered_results = page_state["results"]
-        question_offset = page_state["offset"]
-        question_limit = None if include_all_remaining else page_state["limit"]
-        total_questions = self.retriever.count_related_questions(filtered_results)
-
-        if question_offset >= total_questions:
-            return "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다.", {}, 0
-
-        response = self.retriever.format_questions_for_answer(
-            filtered_results,
-            question_offset=question_offset,
-            question_limit=question_limit
-        )
-        image_paths = self.retriever.collect_image_paths(
-            filtered_results,
-            question_offset=question_offset,
-            question_limit=question_limit
-        )
-
-        shown_count = total_questions - question_offset if include_all_remaining else page_state["limit"]
-        page_state["offset"] = min(question_offset + shown_count, total_questions)
-        self.question_page_store[session_id] = page_state
-        remaining_count = max(total_questions - page_state["offset"], 0)
-
-        return response, image_paths, remaining_count
-
     def _get_refined_context(self, x):
         """
         맥락이 포함된 재구성된 질문으로 검색 수행
@@ -248,7 +192,6 @@ class PassMasterChain:
             history = self._get_session_history(session_id)
             recent_history = history.messages[-2:]
             image_paths = {}
-            question_section = ""
             remaining_question_count = 0
             page_state = self.question_page_store.get(session_id)
 
@@ -260,25 +203,47 @@ class PassMasterChain:
 
             if (is_more_question_request or is_all_question_request) and page_state:
                 if is_all_question_request:
-                    yield {"type": "status", "message": "이전 검색 결과에서 남은 기출 전체 준비 중..."}
+                    yield {"type": "status", "message": "이전 검색 결과에서 남은 기출 전체 LLM 검수 준비 중..."}
                 else:
-                    yield {"type": "status", "message": "이전 검색 결과에서 다음 기출 3문제 준비 중..."}
+                    yield {"type": "status", "message": "이전 검색 결과에서 다음 기출 3문제 LLM 검수 준비 중..."}
 
-                response, image_paths, remaining_question_count = self._build_question_only_response(
-                    session_id=session_id,
-                    page_state=page_state,
-                    include_all_remaining=is_all_question_request
+                filtered_results = page_state["results"]
+                question_offset = page_state["offset"]
+                question_limit = None if is_all_question_request else page_state["limit"]
+                total_questions = self.retriever.count_related_questions(filtered_results)
+
+                if question_offset >= total_questions:
+                    response = "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
+                    history.add_user_message(user_query)
+                    history.add_ai_message(response)
+                    yield {"type": "answer", "content": response, "images": {}}
+                    return
+
+                context = self.retriever.format_context_for_llm(
+                    filtered_results,
+                    question_offset=question_offset,
+                    question_limit=question_limit
                 )
-                response = self._append_remaining_question_notice(
-                    response,
-                    remaining_question_count
+                context += (
+                    "\n\n### 응답 모드\n"
+                    "- 이 요청은 이전 검색 결과의 기출 더보기입니다.\n"
+                    "- [단원 정보], [요약 정보], [보충 설명], [합격 포인트]는 반복하지 마십시오.\n"
+                    "- [실제 기출 문제] 섹션만 출력하십시오.\n"
+                    "- 제공된 문제 원문과 코드는 LLM이 읽기 좋게 줄바꿈과 코드블럭을 정리하되, 문제 내용과 정답은 바꾸지 마십시오.\n"
+                )
+                image_paths = self.retriever.collect_image_paths(
+                    filtered_results,
+                    question_offset=question_offset,
+                    question_limit=question_limit
                 )
 
-                history.add_user_message(user_query)
-                history.add_ai_message(response)
-
-                yield {"type": "answer", "content": response, "images": image_paths}
-                return
+                shown_count = total_questions - question_offset if is_all_question_request else page_state["limit"]
+                page_state["offset"] = min(question_offset + shown_count, total_questions)
+                self.question_page_store[session_id] = page_state
+                remaining_question_count = max(
+                    total_questions - page_state["offset"],
+                    0
+                )
             elif (is_more_question_request or is_all_question_request) and not page_state:
                 response = "이전 검색 결과가 없어 이어서 보여줄 관련 기출 문제가 없습니다. 먼저 궁금한 개념을 질문해 주세요."
                 history.add_user_message(user_query)
@@ -334,11 +299,6 @@ class PassMasterChain:
                         question_offset=question_offset,
                         question_limit=question_limit
                     )
-                    question_section = self.retriever.format_questions_for_answer(
-                        filtered_results,
-                        question_offset=question_offset,
-                        question_limit=question_limit
-                    )
                     image_paths = self.retriever.collect_image_paths(
                         filtered_results,
                         question_offset=question_offset,
@@ -361,7 +321,6 @@ class PassMasterChain:
                 "question": user_query,
             })
             response = self._extract_llm_content(self.llm.invoke(prompt_value))
-            response = self._merge_question_section(response, question_section)
             response = self._append_remaining_question_notice(
                 response,
                 remaining_question_count

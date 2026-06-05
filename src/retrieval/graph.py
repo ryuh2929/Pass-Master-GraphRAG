@@ -1,9 +1,4 @@
-import html
-import re
-
 from langchain_neo4j import Neo4jGraph
-
-ANSWER_MASK_CLASS = "answer-mask"
 
 class GraphRetriever:
     def __init__(self, url, username, password):
@@ -57,7 +52,7 @@ class GraphRetriever:
         self,
         search_results: list,
         question_offset: int = 0,
-        question_limit: int = 3
+        question_limit: int | None = 3
     ) -> str:
         """
         추출된 리스트 데이터를 LLM 프롬프트에 주입할 텍스트 형식으로 변환합니다.
@@ -97,13 +92,16 @@ class GraphRetriever:
         self,
         search_results: list,
         question_offset: int = 0,
-        question_limit: int = 3
+        question_limit: int | None = 3
     ) -> str:
         questions = self.get_sorted_related_questions(search_results, primary_only=True)
         if not questions:
             return ""
 
-        page_questions = questions[question_offset:question_offset + question_limit]
+        if question_limit is None:
+            page_questions = questions[question_offset:]
+        else:
+            page_questions = questions[question_offset:question_offset + question_limit]
         remaining_count = max(len(questions) - (question_offset + len(page_questions)), 0)
         start_no = question_offset + 1
         end_no = question_offset + len(page_questions)
@@ -124,138 +122,6 @@ class GraphRetriever:
             part += f"{q['answer']}\n"
 
         return part
-
-    def format_questions_for_answer(
-        self,
-        search_results: list,
-        question_offset: int = 0,
-        question_limit: int | None = 3
-    ) -> str:
-        """더보기 응답에서 LLM을 거치지 않고 기출 문제 원문만 출력합니다."""
-        questions = self.get_sorted_related_questions(search_results, primary_only=True)
-        if not questions:
-            return "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
-
-        if question_limit is None:
-            page_questions = questions[question_offset:]
-        else:
-            page_questions = questions[question_offset:question_offset + question_limit]
-
-        if not page_questions:
-            return "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
-
-        lines = ["### 실제 기출 문제"]
-        for index, question in enumerate(page_questions, start=question_offset + 1):
-            question_id = question.get("id", "unknown")
-            question_text = self._format_question_text_for_answer(
-                str(question.get("question") or "").rstrip()
-            )
-            answer_text = str(question.get("answer") or "").rstrip()
-
-            lines.append(f"#### {index}. [문제 {question_id}]")
-            lines.append("[문제]")
-            lines.append(question_text)
-
-            if question.get("images"):
-                lines.append(f"[[IMAGE:{question_id}]]")
-
-            if answer_text:
-                masked_answer = (
-                    f'<span class="{ANSWER_MASK_CLASS}">'
-                    f'정답: {html.escape(answer_text)}'
-                    "</span>"
-                )
-                lines.append("[정답]")
-                lines.append(masked_answer)
-
-        return "\n\n".join(lines)
-
-    def _format_question_text_for_answer(self, question_text: str) -> str:
-        """문제 원문은 유지하되 코드 영역은 읽을 수 있게 분리합니다."""
-        question_text = self._normalize_question_whitespace(question_text)
-        if "Color Scripter" in question_text or "cs\n[표]" in question_text:
-            return self._format_color_scripter_question(question_text)
-
-        source_marker = "[Source Code]"
-        if source_marker not in question_text:
-            return question_text
-
-        before_source, source_code = question_text.split(source_marker, 1)
-        source_code = source_code.strip()
-        if not source_code:
-            return question_text
-
-        source_code = self._format_code_text(source_code)
-        return (
-            f"{before_source.rstrip()}\n\n"
-            f"{source_marker}\n\n"
-            f"{self._code_block(source_code)}"
-        ).strip()
-
-    def _format_color_scripter_question(self, question_text: str) -> str:
-        # 크롤링 중 Color Scripter 표가 평면화되며 생기는 중복 표 영역은 출력에서 제외한다.
-        question_text = re.split(r"\s*cs\s*\n?\[표\]", question_text, maxsplit=1)[0]
-        question_text = question_text.replace("Colored by Color Scripter", "").rstrip()
-
-        code_match = re.search(r"(?P<desc>.*?)(?P<code>\d{3,}(?:#include|[A-Za-z_]))", question_text, re.DOTALL)
-        if not code_match:
-            return question_text
-
-        description = code_match.group("desc").rstrip()
-        code_text = question_text[code_match.start("code"):]
-        code_text = re.sub(r"^\d+", "", code_text).strip()
-        code_text = self._format_code_text(code_text)
-
-        return f"{description}\n\n[Code]\n\n{self._code_block(code_text)}".strip()
-
-    def _normalize_question_whitespace(self, text: str) -> str:
-        return text.replace("\u00a0", " ").replace("\u200b", "")
-
-    def _format_code_text(self, code_text: str) -> str:
-        code_text = self._normalize_question_whitespace(code_text).strip()
-        code_text = code_text.replace("Colored by Color Scripter", "").strip()
-        code_text = self._collapse_tokenized_code(code_text)
-        code_text = self._split_compact_code(code_text)
-        return code_text.replace("```", "`\u200b``").strip()
-
-    def _collapse_tokenized_code(self, code_text: str) -> str:
-        lines = [line.strip() for line in code_text.splitlines() if line.strip()]
-        if len(lines) < 8:
-            return code_text
-
-        short_line_count = sum(1 for line in lines if len(line) <= 12)
-        if short_line_count / len(lines) < 0.75:
-            return code_text
-
-        return " ".join(lines)
-
-    def _split_compact_code(self, code_text: str) -> str:
-        if "\n" in code_text and len(code_text.splitlines()) > 1:
-            return code_text
-
-        if "#include" in code_text or "printf" in code_text or "intmain" in code_text:
-            code_text = re.sub(r"(#include<[^>]+>)(?=\w)", r"\1\n", code_text)
-            code_text = re.sub(
-                r"\b(char|int|void|float|double|long|short|return)(?=[A-Za-z_])",
-                r"\1 ",
-                code_text,
-            )
-            code_text = re.sub(r"(?=#include)", "\n", code_text)
-            code_text = re.sub(r"([;{}])", r"\1\n", code_text)
-            return self._strip_blank_code_lines(code_text)
-
-        if "print(" in code_text and re.search(r"^[A-Za-z_]\w*=", code_text):
-            code_text = re.sub(r"(?<!^)(?=[A-Za-z_]\w*=)", "\n", code_text)
-            code_text = re.sub(r"(?=print\()", "\n", code_text)
-            return self._strip_blank_code_lines(code_text)
-
-        return code_text
-
-    def _strip_blank_code_lines(self, code_text: str) -> str:
-        return "\n".join(line.strip() for line in code_text.splitlines() if line.strip())
-
-    def _code_block(self, code_text: str) -> str:
-        return f"```text\n{code_text}\n```"
 
     def get_sorted_related_questions(
         self,
