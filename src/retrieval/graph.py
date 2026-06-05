@@ -110,6 +110,44 @@ class GraphRetriever:
 
         return part
 
+    def format_questions_for_answer(
+        self,
+        search_results: list,
+        question_offset: int = 0,
+        question_limit: int | None = 3
+    ) -> str:
+        """더보기 응답에서 LLM을 거치지 않고 기출 문제 원문만 출력합니다."""
+        questions = self.get_sorted_related_questions(search_results, primary_only=True)
+        if not questions:
+            return "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
+
+        if question_limit is None:
+            page_questions = questions[question_offset:]
+        else:
+            page_questions = questions[question_offset:question_offset + question_limit]
+
+        if not page_questions:
+            return "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
+
+        lines = ["### 실제 기출 문제"]
+        for index, question in enumerate(page_questions, start=question_offset + 1):
+            question_id = question.get("id", "unknown")
+            question_text = str(question.get("question") or "").rstrip()
+            answer_text = str(question.get("answer") or "").rstrip()
+
+            lines.append(f"#### {index}. [문제 {question_id}]")
+            lines.append("[문제]")
+            lines.append(question_text)
+
+            if question.get("images"):
+                lines.append(f"[[IMAGE:{question_id}]]")
+
+            if answer_text:
+                lines.append("[정답]")
+                lines.append(answer_text)
+
+        return "\n\n".join(lines)
+
     def get_sorted_related_questions(
         self,
         search_results: list,
@@ -144,12 +182,15 @@ class GraphRetriever:
         self,
         search_results: list,
         question_offset: int = 0,
-        question_limit: int = 3
+        question_limit: int | None = 3
     ) -> dict[str, list[str]]:
         """검색 결과에 포함된 관련 기출 이미지 경로를 문제 ID별로 수집합니다."""
         images_by_question = {}
         questions = self.get_sorted_related_questions(search_results, primary_only=True)
-        page_questions = questions[question_offset:question_offset + question_limit]
+        if question_limit is None:
+            page_questions = questions[question_offset:]
+        else:
+            page_questions = questions[question_offset:question_offset + question_limit]
 
         for question in page_questions:
             question_id = question.get("id")
