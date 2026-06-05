@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import streamlit as st
 from src.llm.rag_chain import PassMasterChain
 
@@ -48,6 +50,9 @@ st.caption("ADsP, 정보처리기사 등 국가기술자격증 데이터를 기�
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"], unsafe_allow_html=True)
+        for image_path in message.get("images", []):
+            if Path(image_path).exists():
+                st.image(image_path)
 
 # 6. 사용자 입력 및 추론
 if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소 알려줘)"):
@@ -59,6 +64,7 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소
     # Pass-Master 답변 생성
     with st.chat_message("assistant"):
         response = "" # 결과값 담을 변수
+        image_paths = []
         status_placeholder = st.empty()
 
         with status_placeholder.container():
@@ -70,6 +76,7 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소
                         status.update(label=event["message"])
                     elif isinstance(event, dict) and event.get("type") == "answer":
                         response = event["content"]
+                        image_paths = event.get("images", [])
                     else:
                         response = event
 
@@ -79,5 +86,12 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소
         
         # 3. 최종 결과 화면 출력
         st.markdown(response, unsafe_allow_html=True)
+        for image_path in image_paths:
+            if Path(image_path).exists():
+                st.image(image_path)
             
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": response,
+        "images": image_paths
+    })

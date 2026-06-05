@@ -40,7 +40,8 @@ class GraphDataManager:
         MERGE (q:Question {problem_id: $year + "_" + $round + "_" + prob.no})
         SET q.no = prob.no, 
             q.question = prob.question, 
-            q.answer = prob.answer
+            q.answer = prob.answer,
+            q.images = coalesce(prob.images, [])
         MERGE (e)-[:HAS_QUESTION]->(q)
         """
         self.graph.query(query, {
@@ -50,6 +51,31 @@ class GraphDataManager:
             "url": data.get('url'),
             "problems": data['problems']
         })
+
+    def update_question_images(self, target_dir: str):
+        """기존 Question 노드에 exam_*.json의 images 속성만 갱신합니다."""
+        json_files = glob.glob(os.path.join(target_dir, "exam_*.json"))
+
+        query = """
+        UNWIND $problems AS prob
+        MATCH (q:Question {problem_id: $year + "_" + $round + "_" + prob.no})
+        SET q.images = coalesce(prob.images, [])
+        RETURN count(q) AS updated_count
+        """
+
+        total_updated = 0
+        for file_path in sorted(json_files):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            result = self.graph.query(query, {
+                "year": data['year'],
+                "round": data['round'],
+                "problems": data['problems']
+            })
+            total_updated += result[0]["updated_count"] if result else 0
+
+        print(f"✅ Question 이미지 경로 {total_updated}개 노드 갱신 완료")
 
     def load_summary_chunks(self, json_path: str):
         """요약본(processed_chunks.json) 구조에 맞춘 적재 로직"""
@@ -161,7 +187,13 @@ class GraphDataManager:
         print(f"✅ 검증된 의미적 연결 {result[0]['link_count']}개 생성 완료")
 
 if __name__ == "__main__":
+    import sys
+
     manager = GraphDataManager()
+
+    if len(sys.argv) > 1 and sys.argv[1] == "update-images":
+        manager.update_question_images("data/processed")
+        raise SystemExit(0)
     
     # 1. 기출문제 먼저 다 넣기 (Exam 노드가 있어야 요약본과 연결됨)
     manager.load_all_exams("data/processed")

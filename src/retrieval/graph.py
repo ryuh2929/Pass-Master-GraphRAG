@@ -29,7 +29,8 @@ class GraphRetriever:
         WITH c, score, collect({
             id: q.problem_id, 
             question: q.question, 
-            answer: q.answer
+            answer: q.answer,
+            images: coalesce(q.images, [])
         }) AS related_questions
         
         RETURN 
@@ -72,16 +73,33 @@ class GraphRetriever:
                 part += f"- 관련 기출 문제 수: {len(related_questions)}개\n"
                 part += "- 기본 표시 후보(사용자가 전체 보기를 요청하지 않았을 때 이 목록에서만 최대 3개 출력):\n"
                 for q in sampled_questions:
-                    part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']})\n"
+                    image_note = " (이미지 포함)" if q.get("images") else ""
+                    part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']}){image_note}\n"
 
                 if len(related_questions) > sample_size:
                     part += "- 전체 관련 기출 목록(사용자가 전체/전부/모두 보기를 요청했을 때만 모두 출력):\n"
                     for q in related_questions:
-                        part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']})\n"
+                        image_note = " (이미지 포함)" if q.get("images") else ""
+                        part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']}){image_note}\n"
             
             context_parts.append(part)
             
         return "\n\n".join(context_parts)
+
+    def collect_image_paths(self, search_results: list) -> list[str]:
+        """검색 결과에 포함된 관련 기출 이미지 경로를 중복 없이 수집합니다."""
+        image_paths = []
+        seen = set()
+
+        for res in search_results:
+            for question in res.get("related_questions", []):
+                for image_path in question.get("images") or []:
+                    normalized_path = image_path.replace("\\", "/")
+                    if normalized_path not in seen:
+                        seen.add(normalized_path)
+                        image_paths.append(normalized_path)
+
+        return image_paths
     
 # 테스트 코드: 임의의 임베딩 벡터를 만들어서 Neo4j DB에 저장된 데이터 중 가장 유사도가 높은 노드 2개와 그에 연결된 기출문제 조회
 if __name__ == "__main__":
