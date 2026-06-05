@@ -3,6 +3,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    profiles: ["local"]  # 'local' 프로필 지정
     container_name: passmaster-ollama
     ports:
       - "11434:11434"
@@ -10,9 +11,16 @@ services:
       - ollama_data:/root/.ollama
     runtime: nvidia
     environment:
-      - OLLAMA_MAX_LOADED_MODELS=2
+      - OLLAMA_MAX_LOADED_MODELS=1
       # - OLLAMA_KEEP_ALIVE=1m
       - NVIDIA_VISIBLE_DEVICES=all
+    # 💡 entrypoint 추가: 서버 실행 -> 잠시 대기(서버 부팅 시간) -> 모델 풀 -> 프로세스 유지
+    # 💡 llama3 모델
+    # entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 10 && ollama pull llama3 && wait"]
+    # 💡 exaone3.5 모델
+    # entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 10 && ollama pull exaone3.5:7.8b && wait"]
+    # 💡 gemma4 모델
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 10 && ollama pull gemma4:e4b && wait"]
     deploy:
       resources:
         reservations:
@@ -25,6 +33,7 @@ services:
   neo4j:
     image: neo4j:5.18
     container_name: passmaster-neo4j
+    hostname: passmaster-neo4j
     ports:
       - "7474:7474"   # 브라우저 UI
       - "7687:7687"   # Bolt (앱 연결)
@@ -35,7 +44,7 @@ services:
       - NEO4J_PLUGINS=["apoc"]
       # - NEO4J_dbms_memory_heap_initial_size=512m
       # - NEO4J_dbms_memory_heap_max_size=1G
-      - NEO4J_dbms_memory_pagecache_size=1G
+      - NEO4J_server_memory_pagecache_size=1G
     restart: unless-stopped
 
   tei:
@@ -62,6 +71,7 @@ services:
 
   tei-reranker:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    profiles: ["local"]  # 'local' 프로필 지정
     container_name: passmaster-tei-reranker
     ports:
       - "8081:80"
