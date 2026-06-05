@@ -29,6 +29,9 @@ st.markdown("""
 
 def render_answer(content: str, images_by_question: dict, image_width: int = 520):
     """Render answer markdown and place local images at [[IMAGE:question_id]] tokens."""
+    if not isinstance(images_by_question, dict):
+        images_by_question = {}
+
     token_pattern = re.compile(r"\[\[IMAGE:([^\]]+)\]\]")
     cursor = 0
 

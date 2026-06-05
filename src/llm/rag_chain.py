@@ -35,6 +35,7 @@ class PassMasterChain:
         
         # 3. 대화 기록 저장소 (세션별 관리)
         self.history_store = {} 
+        self.question_page_store = {}
 
         # 4. 프롬프트 템플릿 구성
         self.condense_question_prompt = get_condense_question_prompt()
@@ -90,6 +91,10 @@ class PassMasterChain:
 
     def _extract_llm_content(self, response):
         return response.content if hasattr(response, "content") else str(response)
+
+    def _is_more_question_request(self, user_query: str) -> bool:
+        more_keywords = ["더 보여", "더보기", "더 보기", "다음", "이어서", "계속"]
+        return any(keyword in user_query for keyword in more_keywords)
 
     def _get_refined_context(self, x):
         """
@@ -166,13 +171,41 @@ class PassMasterChain:
         try:
             history = self._get_session_history(session_id)
             recent_history = history.messages[-2:]
-            image_paths = []
+            image_paths = {}
+            remaining_question_count = 0
+            page_state = self.question_page_store.get(session_id)
 
             yield {"type": "status", "message": "질문 맥락 분석 중..."}
             context_keywords = ["방금", "그거", "이거", "앞서", "다시", "정답만", "해설만"]
             is_contextual_request = any(word in user_query for word in context_keywords)
+            is_more_question_request = self._is_more_question_request(user_query)
 
-            if is_contextual_request:
+            if is_more_question_request and page_state:
+                yield {"type": "status", "message": "이전 검색 결과에서 다음 기출 3문제 준비 중..."}
+                filtered_results = page_state["results"]
+                question_offset = page_state["offset"]
+                question_limit = page_state["limit"]
+                total_questions = self.retriever.count_related_questions(filtered_results)
+
+                if question_offset >= total_questions:
+                    context = "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
+                    image_paths = {}
+                else:
+                    context = self.retriever.format_context_for_llm(
+                        filtered_results,
+                        question_offset=question_offset,
+                        question_limit=question_limit
+                    )
+                    image_paths = self.retriever.collect_image_paths(
+                        filtered_results,
+                        question_offset=question_offset,
+                        question_limit=question_limit
+                    )
+                    page_state["offset"] = min(question_offset + question_limit, total_questions)
+                    remaining_question_count = max(total_questions - page_state["offset"], 0)
+            elif is_more_question_request and not page_state:
+                context = "이전 검색 결과가 없어 이어서 보여줄 관련 기출 문제가 없습니다. 먼저 궁금한 개념을 질문해 주세요."
+            elif is_contextual_request:
                 yield {"type": "status", "message": "이전 대화 재사용 여부 판단 중..."}
                 decision = self.llm.invoke(
                     build_context_decision_prompt(recent_history, user_query)
@@ -211,9 +244,30 @@ class PassMasterChain:
 
                 if not filtered_results:
                     context = "지식 베이스에서 관련 내용을 찾을 수 없습니다."
+                    self.question_page_store.pop(session_id, None)
                 else:
-                    context = self.retriever.format_context_for_llm(filtered_results)
-                    image_paths = self.retriever.collect_image_paths(filtered_results)
+                    question_limit = 3
+                    question_offset = 0
+                    total_questions = self.retriever.count_related_questions(filtered_results)
+                    context = self.retriever.format_context_for_llm(
+                        filtered_results,
+                        question_offset=question_offset,
+                        question_limit=question_limit
+                    )
+                    image_paths = self.retriever.collect_image_paths(
+                        filtered_results,
+                        question_offset=question_offset,
+                        question_limit=question_limit
+                    )
+                    self.question_page_store[session_id] = {
+                        "results": filtered_results,
+                        "offset": min(question_limit, total_questions),
+                        "limit": question_limit,
+                    }
+                    remaining_question_count = max(
+                        total_questions - self.question_page_store[session_id]["offset"],
+                        0
+                    )
 
             yield {"type": "status", "message": "LLM 답변 생성 중..."}
             prompt_value = self.prompt.invoke({
@@ -222,6 +276,11 @@ class PassMasterChain:
                 "question": user_query,
             })
             response = self._extract_llm_content(self.llm.invoke(prompt_value))
+            if remaining_question_count > 0:
+                response += (
+                    f"\n\n관련 기출이 {remaining_question_count}개 더 있습니다. "
+                    "다음 대화에서 \"더 보여줘\"라고 입력하면 이어서 3개씩 보여드릴게요."
+                )
 
             history.add_user_message(user_query)
             history.add_ai_message(response)
@@ -229,7 +288,7 @@ class PassMasterChain:
             yield {"type": "answer", "content": response, "images": image_paths}
             
         except Exception as e:
-            yield {"type": "answer", "content": f"❌ 오류 발생: {e}", "images": []}
+            yield {"type": "answer", "content": f"❌ 오류 발생: {e}", "images": {}}
         
 if __name__ == "__main__":
     chain = PassMasterChain()
