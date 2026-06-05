@@ -580,3 +580,174 @@ TEI 임베딩, Neo4j 검색, 컨텍스트 구성, LLM 생성 중 어느 단계�
 상태 UI는 단순 안내 문구를 미리 출력하는 방식이 아니라, GraphRAG 내부 단계가 실행되기 직전에 event를 반환하는 방식으로 구현한다.
 
 토큰 스트리밍은 필요하지 않다. 이 프로젝트에서 필요한 것은 LLM 내부 토큰 출력이 아니라 GraphRAG 파이프라인 단계 표시다.
+
+## 10. 기출 이미지가 문제와 1:1로 매칭되지 않음
+
+### 문제 상황
+
+기출 문제에 이미지가 포함되어 있는데 답변에서는 이미지가 문제 바로 아래에 나오지 않거나, 답변 맨 마지막에 몰려서 출력된다.
+
+이미지가 너무 크게 표시되어 답변 가독성이 떨어지고, 어떤 문제에 연결된 이미지인지 확인하기 어렵다.
+
+### 원인
+
+기출 JSON의 `images` 항목을 GraphDB의 `Question` 노드에 저장하지 않거나, LLM 답변과 별도로 이미지 목록만 후처리하면 문제와 이미지의 위치 관계가 깨진다.
+
+또한 `st.image(width=...)`처럼 width 기준으로만 크기를 고정하면 이미지 원본 비율에 따라 세로 길이가 크게 달라진다.
+
+### 해결 방법
+
+기출 적재 시 `Question.images` 속성을 함께 저장한다.
+
+수정 파일: `src/ingestion/loader.py`
+
+```cypher
+SET q.no = prob.no,
+    q.question = prob.question,
+    q.answer = prob.answer,
+    q.images = coalesce(prob.images, [])
+```
+
+검색 결과에서 현재 표시 범위의 문제 이미지 경로만 문제 ID별로 수집한다.
+
+수정 파일: `src/retrieval/graph.py`
+
+```python
+def collect_image_paths(
+    self,
+    search_results: list,
+    question_offset: int = 0,
+    question_limit: int | None = 3
+) -> dict[str, list[str]]:
+    ...
+```
+
+LLM 컨텍스트에는 이미지가 필요한 문제 바로 아래에 `[[IMAGE:problem_id]]` 토큰을 넣고, Streamlit에서는 이 토큰 위치에 이미지를 삽입한다.
+
+수정 파일: `app.py`
+
+```python
+token_pattern = re.compile(r"\[\[IMAGE:([^\]]+)\]\]")
+
+for match in token_pattern.finditer(content):
+    ...
+    question_id = match.group(1).strip()
+    for image_path in images_by_question.get(question_id, []):
+        render_local_image(image_path)
+```
+
+이미지 크기는 width 고정 대신 HTML 이미지 태그와 CSS `max-height`로 제어한다.
+
+수정 파일: `app.py`
+
+```python
+.question-image {
+    display: block;
+    max-height: 420px;
+    max-width: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+```
+
+### 개선 효과
+
+각 이미지는 해당 기출 문제의 `[[IMAGE:problem_id]]` 위치에 출력된다.
+
+답변 맨 아래에 관련 없는 이미지가 몰리는 문제를 방지하고, 이미지 크기가 답변 영역을 과도하게 차지하지 않는다.
+
+### 정리
+
+기출 이미지는 답변 후처리 목록으로 붙이지 않는다. 문제 ID 기반 이미지 토큰을 사용해 LLM 답변 위치와 Streamlit 렌더링 위치를 연결한다.
+
+## 11. 기출 더보기 요청에서 답변 범위가 흐려짐
+
+### 문제 상황
+
+관련 기출 문제가 여러 개 있을 때 첫 답변에 모든 문제를 출력하면 답변이 길어진다.
+
+반대로 일부만 보여주면 사용자가 다음 문제를 이어서 보고 싶어 할 수 있는데, `더 보여줘` 같은 요청을 일반 RAG 질문처럼 처리하면 단원 요약, 보충 설명, 합격 포인트가 반복될 수 있다.
+
+또한 랜덤하게 기출을 보여주면 최신 기출부터 학습하기 어렵고, 같은 문제만 반복될 수 있다.
+
+### 원인
+
+일반 개념 질문과 후속 기출 더보기 요청을 같은 흐름으로 처리하면 사용자 의도를 구분하기 어렵다.
+
+일반 질문은 개념 설명과 기출 예시가 필요하지만, `더 보여줘`는 이전 검색 결과의 다음 기출 문제만 이어서 보고 싶은 요청이다.
+
+### 해결 방법
+
+사용자 입력을 키워드 기반으로 먼저 라우팅한다.
+
+수정 파일: `src/llm/rag_chain.py`
+
+```python
+def _is_more_question_request(self, user_query: str) -> bool:
+    more_keywords = ["더 보여", "더보기", "더 보기", "다음", "이어서", "계속"]
+    return any(keyword in user_query for keyword in more_keywords)
+
+def _is_all_question_request(self, user_query: str) -> bool:
+    all_keywords = ["전체 보여", "전부 보여", "다 보여", "전체 기출", "나머지 전부", "남은 거 전부"]
+    return any(keyword in user_query for keyword in all_keywords)
+```
+
+일반 질문이 들어오면 검색 결과와 현재 offset을 세션에 저장한다.
+
+수정 파일: `src/llm/rag_chain.py`
+
+```python
+self.question_page_store[session_id] = {
+    "results": filtered_results,
+    "offset": min(question_limit, total_questions),
+    "limit": question_limit,
+}
+```
+
+후속 요청은 저장된 검색 결과와 offset을 사용한다.
+
+```text
+일반 질문
+-> 최신순 3문제 context 구성
+-> offset = 3 저장
+
+더 보여줘
+-> 저장된 검색 결과에서 offset부터 다음 3문제 context 구성
+-> offset 갱신
+
+전체 보여줘
+-> 저장된 검색 결과에서 현재 offset 이후 남은 전체 context 구성
+-> offset 끝까지 갱신
+```
+
+현재 구조에서는 질문 라우팅과 카운팅은 코드가 담당하고, 문제 본문과 코드블럭 정리는 LLM이 담당한다.
+
+수정 파일: `src/llm/rag_chain.py`
+
+```python
+context = self.retriever.format_context_for_llm(
+    filtered_results,
+    question_offset=question_offset,
+    question_limit=question_limit
+)
+
+context += """
+### 응답 모드
+- 이 요청은 이전 검색 결과의 기출 더보기입니다.
+- [단원 정보], [요약 정보], [보충 설명], [합격 포인트]는 반복하지 마십시오.
+- [실제 기출 문제] 섹션만 출력하십시오.
+"""
+```
+
+### 개선 효과
+
+첫 답변은 개념 설명과 최신순 기출 3문제를 함께 제공한다.
+
+`더 보여줘`는 이전 검색 결과에서 다음 3문제만 이어서 보여주고, `전체 보여줘`는 남은 전체 문제를 보여준다.
+
+사용자는 긴 답변에 압도되지 않고 관련 기출을 단계적으로 확인할 수 있다.
+
+### 정리
+
+기출 더보기는 LLM에게 전부 맡기지 않는다. 요청 라우팅, offset, 표시 범위는 코드가 관리하고, 현재 표시 범위의 문제 출력 품질은 LLM이 검수한다.
