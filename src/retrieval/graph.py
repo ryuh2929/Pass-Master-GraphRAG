@@ -1,3 +1,5 @@
+import random
+
 from langchain_neo4j import Neo4jGraph
 
 class GraphRetriever:
@@ -28,7 +30,7 @@ class GraphRetriever:
             id: q.id, 
             question: q.question, 
             answer: q.answer
-        })[..3] AS related_questions
+        }) AS related_questions
         
         RETURN 
             c.title AS title, 
@@ -58,10 +60,24 @@ class GraphRetriever:
             part += f"- 주요 개념: {res['title']}\n"
             part += f"- 상세 설명: {res['content']}\n"
             
-            if res['related_questions'] and res['related_questions'][0]['id'] is not None:
-                part += "- 실제 기출 사례:\n"
-                for q in res['related_questions']:
+            related_questions = [
+                q for q in res.get('related_questions', [])
+                if q.get('id') is not None
+            ]
+
+            if related_questions:
+                sample_size = min(3, len(related_questions))
+                sampled_questions = random.sample(related_questions, sample_size)
+
+                part += f"- 관련 기출 문제 수: {len(related_questions)}개\n"
+                part += "- 기본 표시 후보(사용자가 전체 보기를 요청하지 않았을 때 이 목록에서만 최대 3개 출력):\n"
+                for q in sampled_questions:
                     part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']})\n"
+
+                if len(related_questions) > sample_size:
+                    part += "- 전체 관련 기출 목록(사용자가 전체/전부/모두 보기를 요청했을 때만 모두 출력):\n"
+                    for q in related_questions:
+                        part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']})\n"
             
             context_parts.append(part)
             
