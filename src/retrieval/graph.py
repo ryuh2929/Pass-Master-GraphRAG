@@ -1,4 +1,8 @@
+import html
+
 from langchain_neo4j import Neo4jGraph
+
+ANSWER_MASK_CLASS = "answer-mask"
 
 class GraphRetriever:
     def __init__(self, url, username, password):
@@ -107,10 +111,16 @@ class GraphRetriever:
         part += f"- 관련 기출 문제 수: {len(questions)}개\n"
         part += f"- 현재 표시 범위: {start_no}~{end_no}번째 최신 기출\n"
         part += f"- 남은 기출 문제 수: {remaining_count}개\n"
+        part += f"- 기본 표시 후보: 아래 {len(page_questions)}개 문제를 답변에 모두 출력해야 함\n"
 
-        for q in page_questions:
-            image_note = f" (이미지 토큰: [[IMAGE:{q['id']}]] )" if q.get("images") else ""
-            part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']}){image_note}\n"
+        for index, q in enumerate(page_questions, start=start_no):
+            part += f"\n#### {index}. [문제 {q['id']}]\n"
+            part += "[문제 원문]\n"
+            part += f"{q['question']}\n"
+            if q.get("images"):
+                part += f"[이미지 토큰]\n[[IMAGE:{q['id']}]]\n"
+            part += "[정답 원문]\n"
+            part += f"{q['answer']}\n"
 
         return part
 
@@ -147,8 +157,13 @@ class GraphRetriever:
                 lines.append(f"[[IMAGE:{question_id}]]")
 
             if answer_text:
+                masked_answer = (
+                    f'<span class="{ANSWER_MASK_CLASS}">'
+                    f'정답: {html.escape(answer_text)}'
+                    "</span>"
+                )
                 lines.append("[정답]")
-                lines.append(answer_text)
+                lines.append(masked_answer)
 
         return "\n\n".join(lines)
 
