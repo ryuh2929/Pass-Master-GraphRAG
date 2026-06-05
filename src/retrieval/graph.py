@@ -48,7 +48,12 @@ class GraphRetriever:
         
         return self.graph.query(query, params)
 
-    def format_context_for_llm(self, search_results: list) -> str:
+    def format_context_for_llm(
+        self,
+        search_results: list,
+        question_offset: int = 0,
+        question_limit: int = 3
+    ) -> str:
         """
         추출된 리스트 데이터를 LLM 프롬프트에 주입할 텍스트 형식으로 변환합니다.
         """
@@ -63,38 +68,112 @@ class GraphRetriever:
             part += f"- 주요 개념: {res['title']}\n"
             part += f"- 중요도: {res.get('importance')}\n"
             practical_dates = res.get('practical_dates') or []
+            linked_question_count = len(
+                self.get_sorted_related_questions([res], primary_only=True)
+            )
             part += f"- 실기 출제 횟수: {len(practical_dates)}회\n"
+            part += f"- 그래프DB 연결 기출 수: {linked_question_count}문제\n"
             part += f"- 실기 출제 날짜: {', '.join(practical_dates) if practical_dates else '없음'}\n"
             part += f"- 상세 설명: {res['content']}\n"
             
-            related_questions = [
-                q for q in res.get('related_questions', [])
-                if q.get('id') is not None
-            ]
-
-            if related_questions:
-                sorted_questions = sorted(
-                    related_questions,
-                    key=self._question_sort_key,
-                    reverse=True
-                )
-                default_questions = sorted_questions[:3]
-
-                part += f"- 관련 기출 문제 수: {len(related_questions)}개\n"
-                part += "- 기본 표시 후보(사용자가 전체 보기를 요청하지 않았을 때 최신 기출부터 최대 3개 출력):\n"
-                for q in default_questions:
-                    image_note = f" (이미지 토큰: [[IMAGE:{q['id']}]] )" if q.get("images") else ""
-                    part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']}){image_note}\n"
-
-                if len(sorted_questions) > len(default_questions):
-                    part += "- 전체 관련 기출 목록(사용자가 전체/전부/모두 보기를 요청했을 때만 모두 출력):\n"
-                    for q in sorted_questions:
-                        image_note = f" (이미지 토큰: [[IMAGE:{q['id']}]] )" if q.get("images") else ""
-                        part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']}){image_note}\n"
-            
             context_parts.append(part)
-            
+
+        question_parts = self._format_question_page(
+            search_results,
+            question_offset=question_offset,
+            question_limit=question_limit
+        )
+        if question_parts:
+            context_parts.append(question_parts)
+
         return "\n\n".join(context_parts)
+
+    def _format_question_page(
+        self,
+        search_results: list,
+        question_offset: int = 0,
+        question_limit: int = 3
+    ) -> str:
+        questions = self.get_sorted_related_questions(search_results, primary_only=True)
+        if not questions:
+            return ""
+
+        page_questions = questions[question_offset:question_offset + question_limit]
+        remaining_count = max(len(questions) - (question_offset + len(page_questions)), 0)
+        start_no = question_offset + 1
+        end_no = question_offset + len(page_questions)
+
+        part = "### 실제 기출 문제\n"
+        part += f"- 관련 기출 문제 수: {len(questions)}개\n"
+        part += f"- 현재 표시 범위: {start_no}~{end_no}번째 최신 기출\n"
+        part += f"- 남은 기출 문제 수: {remaining_count}개\n"
+
+        for q in page_questions:
+            image_note = f" (이미지 토큰: [[IMAGE:{q['id']}]] )" if q.get("images") else ""
+            part += f"  * [문제 {q['id']}] {q['question']} (정답: {q['answer']}){image_note}\n"
+
+        return part
+
+    def format_questions_for_answer(
+        self,
+        search_results: list,
+        question_offset: int = 0,
+        question_limit: int | None = 3
+    ) -> str:
+        """더보기 응답에서 LLM을 거치지 않고 기출 문제 원문만 출력합니다."""
+        questions = self.get_sorted_related_questions(search_results, primary_only=True)
+        if not questions:
+            return "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
+
+        if question_limit is None:
+            page_questions = questions[question_offset:]
+        else:
+            page_questions = questions[question_offset:question_offset + question_limit]
+
+        if not page_questions:
+            return "이전 검색 결과에서 더 보여줄 관련 기출 문제가 없습니다."
+
+        lines = ["### 실제 기출 문제"]
+        for index, question in enumerate(page_questions, start=question_offset + 1):
+            question_id = question.get("id", "unknown")
+            question_text = str(question.get("question") or "").rstrip()
+            answer_text = str(question.get("answer") or "").rstrip()
+
+            lines.append(f"#### {index}. [문제 {question_id}]")
+            lines.append("[문제]")
+            lines.append(question_text)
+
+            if question.get("images"):
+                lines.append(f"[[IMAGE:{question_id}]]")
+
+            if answer_text:
+                lines.append("[정답]")
+                lines.append(answer_text)
+
+        return "\n\n".join(lines)
+
+    def get_sorted_related_questions(
+        self,
+        search_results: list,
+        primary_only: bool = False
+    ) -> list[dict]:
+        questions_by_id = {}
+        question_sources = search_results[:1] if primary_only else search_results
+
+        for res in question_sources:
+            for question in res.get("related_questions", []):
+                question_id = question.get("id")
+                if question_id and question_id not in questions_by_id:
+                    questions_by_id[question_id] = question
+
+        return sorted(
+            questions_by_id.values(),
+            key=self._question_sort_key,
+            reverse=True
+        )
+
+    def count_related_questions(self, search_results: list) -> int:
+        return len(self.get_sorted_related_questions(search_results, primary_only=True))
 
     def _question_sort_key(self, question: dict):
         try:
@@ -103,21 +182,30 @@ class GraphRetriever:
         except (KeyError, ValueError):
             return 0, 0, 0
 
-    def collect_image_paths(self, search_results: list) -> dict[str, list[str]]:
+    def collect_image_paths(
+        self,
+        search_results: list,
+        question_offset: int = 0,
+        question_limit: int | None = 3
+    ) -> dict[str, list[str]]:
         """검색 결과에 포함된 관련 기출 이미지 경로를 문제 ID별로 수집합니다."""
         images_by_question = {}
+        questions = self.get_sorted_related_questions(search_results, primary_only=True)
+        if question_limit is None:
+            page_questions = questions[question_offset:]
+        else:
+            page_questions = questions[question_offset:question_offset + question_limit]
 
-        for res in search_results:
-            for question in res.get("related_questions", []):
-                question_id = question.get("id")
-                if not question_id:
-                    continue
+        for question in page_questions:
+            question_id = question.get("id")
+            if not question_id:
+                continue
 
-                for image_path in question.get("images") or []:
-                    normalized_path = image_path.replace("\\", "/")
-                    images_by_question.setdefault(question_id, [])
-                    if normalized_path not in images_by_question[question_id]:
-                        images_by_question[question_id].append(normalized_path)
+            for image_path in question.get("images") or []:
+                normalized_path = image_path.replace("\\", "/")
+                images_by_question.setdefault(question_id, [])
+                if normalized_path not in images_by_question[question_id]:
+                    images_by_question[question_id].append(normalized_path)
 
         return images_by_question
     
