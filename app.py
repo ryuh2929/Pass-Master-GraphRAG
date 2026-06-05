@@ -1,4 +1,6 @@
 from pathlib import Path
+import base64
+import mimetypes
 import re
 
 import streamlit as st
@@ -23,12 +25,39 @@ st.markdown("""
     .stChatMessage {
         border-radius: 10px;
     }
+    .question-image {
+        display: block;
+        max-height: 420px;
+        max-width: 100%;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        margin: 0.5rem 0 1rem;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 
-def render_answer(content: str, images_by_question: dict, image_width: int = 520):
-    """Render answer markdown and place local images at [[IMAGE:question_id]] tokens."""
+def render_local_image(image_path: str, max_height: int = 420):
+    """로컬 이미지를 max-height 기준으로 답변 안에 렌더링합니다."""
+    path = Path(image_path)
+    if not path.exists():
+        return
+
+    mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
+    encoded_image = base64.b64encode(path.read_bytes()).decode("ascii")
+    st.markdown(
+        (
+            f'<img class="question-image" '
+            f'style="max-height: {max_height}px;" '
+            f'src="data:{mime_type};base64,{encoded_image}" />'
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_answer(content: str, images_by_question: dict, image_max_height: int = 420):
+    """답변 Markdown을 출력하고 [[IMAGE:question_id]] 위치에 이미지를 삽입합니다."""
     if not isinstance(images_by_question, dict):
         images_by_question = {}
 
@@ -42,8 +71,7 @@ def render_answer(content: str, images_by_question: dict, image_width: int = 520
 
         question_id = match.group(1).strip()
         for image_path in images_by_question.get(question_id, []):
-            if Path(image_path).exists():
-                st.image(image_path, width=image_width)
+            render_local_image(image_path, max_height=image_max_height)
 
         cursor = match.end()
 
