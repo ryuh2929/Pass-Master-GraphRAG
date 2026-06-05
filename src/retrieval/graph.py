@@ -90,7 +90,7 @@ class GraphRetriever:
         question_offset: int = 0,
         question_limit: int = 3
     ) -> str:
-        questions = self.get_sorted_related_questions(search_results)
+        questions = self.get_sorted_related_questions(search_results, primary_only=True)
         if not questions:
             return ""
 
@@ -110,10 +110,15 @@ class GraphRetriever:
 
         return part
 
-    def get_sorted_related_questions(self, search_results: list) -> list[dict]:
+    def get_sorted_related_questions(
+        self,
+        search_results: list,
+        primary_only: bool = False
+    ) -> list[dict]:
         questions_by_id = {}
+        question_sources = search_results[:1] if primary_only else search_results
 
-        for res in search_results:
+        for res in question_sources:
             for question in res.get("related_questions", []):
                 question_id = question.get("id")
                 if question_id and question_id not in questions_by_id:
@@ -126,7 +131,7 @@ class GraphRetriever:
         )
 
     def count_related_questions(self, search_results: list) -> int:
-        return len(self.get_sorted_related_questions(search_results))
+        return len(self.get_sorted_related_questions(search_results, primary_only=True))
 
     def _question_sort_key(self, question: dict):
         try:
@@ -143,7 +148,7 @@ class GraphRetriever:
     ) -> dict[str, list[str]]:
         """검색 결과에 포함된 관련 기출 이미지 경로를 문제 ID별로 수집합니다."""
         images_by_question = {}
-        questions = self.get_sorted_related_questions(search_results)
+        questions = self.get_sorted_related_questions(search_results, primary_only=True)
         page_questions = questions[question_offset:question_offset + question_limit]
 
         for question in page_questions:

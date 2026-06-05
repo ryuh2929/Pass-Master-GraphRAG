@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv
 
 # LangChain 관련 컴포넌트
@@ -95,6 +96,21 @@ class PassMasterChain:
     def _is_more_question_request(self, user_query: str) -> bool:
         more_keywords = ["더 보여", "더보기", "더 보기", "다음", "이어서", "계속"]
         return any(keyword in user_query for keyword in more_keywords)
+
+    def _append_remaining_question_notice(self, response: str, remaining_count: int) -> str:
+        if remaining_count <= 0:
+            return response
+
+        notice_pattern = (
+            r"\n*관련 기출이 \d+개 더 있습니다\.\s*"
+            r"다음 대화에서 [\"']더 보여줘[\"']라고 입력하면 이어서 3개씩 보여드릴게요\."
+        )
+        response = re.sub(notice_pattern, "", response).rstrip()
+        notice = (
+            f"관련 기출이 {remaining_count}개 더 있습니다. "
+            "다음 대화에서 \"더 보여줘\"라고 입력하면 이어서 3개씩 보여드릴게요."
+        )
+        return f"{response}\n\n{notice}"
 
     def _get_refined_context(self, x):
         """
@@ -276,11 +292,10 @@ class PassMasterChain:
                 "question": user_query,
             })
             response = self._extract_llm_content(self.llm.invoke(prompt_value))
-            if remaining_question_count > 0:
-                response += (
-                    f"\n\n관련 기출이 {remaining_question_count}개 더 있습니다. "
-                    "다음 대화에서 \"더 보여줘\"라고 입력하면 이어서 3개씩 보여드릴게요."
-                )
+            response = self._append_remaining_question_notice(
+                response,
+                remaining_question_count
+            )
 
             history.add_user_message(user_query)
             history.add_ai_message(response)
