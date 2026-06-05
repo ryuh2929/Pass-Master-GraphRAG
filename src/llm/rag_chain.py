@@ -106,12 +106,12 @@ class PassMasterChain:
             return response
 
         notice_pattern = (
-            r"\n*관련 기출이 \d+개 더 있습니다\.\s*"
+            r"\n*(?:현재 그래프DB에 연결된 )?관련 기출이 \d+개 더 있습니다\.\s*"
             r"다음 대화에서 [\"']더 보여줘[\"']라고 입력하면 이어서 3개씩 보여드릴게요\."
         )
         response = re.sub(notice_pattern, "", response).rstrip()
         notice = (
-            f"관련 기출이 {remaining_count}개 더 있습니다. "
+            f"현재 그래프DB에 연결된 관련 기출이 {remaining_count}개 더 있습니다. "
             "다음 대화에서 \"더 보여줘\"라고 입력하면 이어서 3개씩 보여드릴게요."
         )
         return f"{response}\n\n{notice}"

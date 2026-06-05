@@ -68,7 +68,11 @@ class GraphRetriever:
             part += f"- 주요 개념: {res['title']}\n"
             part += f"- 중요도: {res.get('importance')}\n"
             practical_dates = res.get('practical_dates') or []
+            linked_question_count = len(
+                self.get_sorted_related_questions([res], primary_only=True)
+            )
             part += f"- 실기 출제 횟수: {len(practical_dates)}회\n"
+            part += f"- 그래프DB 연결 기출 수: {linked_question_count}문제\n"
             part += f"- 실기 출제 날짜: {', '.join(practical_dates) if practical_dates else '없음'}\n"
             part += f"- 상세 설명: {res['content']}\n"
             
