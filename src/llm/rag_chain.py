@@ -287,7 +287,7 @@ class PassMasterChain:
 
             yield {"type": "status", "message": "LLM 답변 생성 중..."}
             prompt_value = self.prompt.invoke({
-                "history": history.messages,
+                "history": recent_history,
                 "context": context,
                 "question": user_query,
             })
