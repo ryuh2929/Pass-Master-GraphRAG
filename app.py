@@ -31,7 +31,6 @@ def render_answer(content: str, images_by_question: dict, image_width: int = 520
     """Render answer markdown and place local images at [[IMAGE:question_id]] tokens."""
     token_pattern = re.compile(r"\[\[IMAGE:([^\]]+)\]\]")
     cursor = 0
-    rendered_images = set()
 
     for match in token_pattern.finditer(content):
         before_token = content[cursor:match.start()]
@@ -42,18 +41,12 @@ def render_answer(content: str, images_by_question: dict, image_width: int = 520
         for image_path in images_by_question.get(question_id, []):
             if Path(image_path).exists():
                 st.image(image_path, width=image_width)
-                rendered_images.add(image_path)
 
         cursor = match.end()
 
     remaining_content = content[cursor:]
     if remaining_content.strip():
         st.markdown(remaining_content, unsafe_allow_html=True)
-
-    for question_id, image_paths in images_by_question.items():
-        for image_path in image_paths:
-            if image_path not in rendered_images and Path(image_path).exists():
-                st.image(image_path, width=image_width)
 
 # 2. 체인 인스턴스 초기화 (세션 스테이트 활용하여 1회만 로드)
 if "rag_chain" not in st.session_state:
