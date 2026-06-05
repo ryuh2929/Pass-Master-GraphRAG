@@ -116,6 +116,30 @@ class PassMasterChain:
         )
         return f"{response}\n\n{notice}"
 
+    def _merge_question_section(self, response: str, question_section: str) -> str:
+        if not question_section:
+            return response
+
+        # 문제 개수/순서/이미지 매칭은 코드가 만든 원문 섹션으로 고정한다.
+        response = re.sub(
+            r"\n*#{0,3}\s*\[?실제 기출 문제\]?.*?(?=\n*#{0,3}\s*\[?합격 포인트\]?|$)",
+            "\n\n",
+            response,
+            flags=re.DOTALL,
+        ).rstrip()
+
+        pass_point_match = re.search(
+            r"(\n*#{0,3}\s*\[?합격 포인트\]?.*)",
+            response,
+            flags=re.DOTALL,
+        )
+        if pass_point_match:
+            before_pass_point = response[:pass_point_match.start()].rstrip()
+            pass_point = pass_point_match.group(1).lstrip()
+            return f"{before_pass_point}\n\n{question_section}\n\n{pass_point}".strip()
+
+        return f"{response}\n\n{question_section}".strip()
+
     def _build_question_only_response(
         self,
         session_id: str,
@@ -224,6 +248,7 @@ class PassMasterChain:
             history = self._get_session_history(session_id)
             recent_history = history.messages[-2:]
             image_paths = {}
+            question_section = ""
             remaining_question_count = 0
             page_state = self.question_page_store.get(session_id)
 
@@ -309,6 +334,11 @@ class PassMasterChain:
                         question_offset=question_offset,
                         question_limit=question_limit
                     )
+                    question_section = self.retriever.format_questions_for_answer(
+                        filtered_results,
+                        question_offset=question_offset,
+                        question_limit=question_limit
+                    )
                     image_paths = self.retriever.collect_image_paths(
                         filtered_results,
                         question_offset=question_offset,
@@ -331,6 +361,7 @@ class PassMasterChain:
                 "question": user_query,
             })
             response = self._extract_llm_content(self.llm.invoke(prompt_value))
+            response = self._merge_question_section(response, question_section)
             response = self._append_remaining_question_notice(
                 response,
                 remaining_question_count

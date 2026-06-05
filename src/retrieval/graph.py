@@ -146,7 +146,9 @@ class GraphRetriever:
         lines = ["### 실제 기출 문제"]
         for index, question in enumerate(page_questions, start=question_offset + 1):
             question_id = question.get("id", "unknown")
-            question_text = str(question.get("question") or "").rstrip()
+            question_text = self._format_question_text_for_answer(
+                str(question.get("question") or "").rstrip()
+            )
             answer_text = str(question.get("answer") or "").rstrip()
 
             lines.append(f"#### {index}. [문제 {question_id}]")
@@ -166,6 +168,27 @@ class GraphRetriever:
                 lines.append(masked_answer)
 
         return "\n\n".join(lines)
+
+    def _format_question_text_for_answer(self, question_text: str) -> str:
+        """문제 원문은 유지하고 [Source Code] 영역만 Markdown 코드블럭으로 감쌉니다."""
+        source_marker = "[Source Code]"
+        if source_marker not in question_text:
+            return question_text
+
+        before_source, source_code = question_text.split(source_marker, 1)
+        source_code = source_code.strip()
+        if not source_code:
+            return question_text
+
+        # 코드 내용은 복원하거나 재배열하지 않고, 표시 형식만 코드블럭으로 바꾼다.
+        safe_source_code = source_code.replace("```", "`\u200b``")
+        return (
+            f"{before_source.rstrip()}\n\n"
+            f"{source_marker}\n\n"
+            "```text\n"
+            f"{safe_source_code}\n"
+            "```"
+        ).strip()
 
     def get_sorted_related_questions(
         self,
