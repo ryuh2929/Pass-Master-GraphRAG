@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 import streamlit as st
 from src.llm.rag_chain import PassMasterChain
@@ -25,6 +26,35 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+
+def render_answer(content: str, images_by_question: dict, image_width: int = 520):
+    """Render answer markdown and place local images at [[IMAGE:question_id]] tokens."""
+    token_pattern = re.compile(r"\[\[IMAGE:([^\]]+)\]\]")
+    cursor = 0
+    rendered_images = set()
+
+    for match in token_pattern.finditer(content):
+        before_token = content[cursor:match.start()]
+        if before_token.strip():
+            st.markdown(before_token, unsafe_allow_html=True)
+
+        question_id = match.group(1).strip()
+        for image_path in images_by_question.get(question_id, []):
+            if Path(image_path).exists():
+                st.image(image_path, width=image_width)
+                rendered_images.add(image_path)
+
+        cursor = match.end()
+
+    remaining_content = content[cursor:]
+    if remaining_content.strip():
+        st.markdown(remaining_content, unsafe_allow_html=True)
+
+    for question_id, image_paths in images_by_question.items():
+        for image_path in image_paths:
+            if image_path not in rendered_images and Path(image_path).exists():
+                st.image(image_path, width=image_width)
+
 # 2. 체인 인스턴스 초기화 (세션 스테이트 활용하여 1회만 로드)
 if "rag_chain" not in st.session_state:
     with st.spinner("🚀 Pass-Master 엔진 로드 중..."):
@@ -49,10 +79,7 @@ st.caption("ADsP, 정보처리기사 등 국가기술자격증 데이터를 기�
 # 5. 기존 대화 로그 렌더링
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"], unsafe_allow_html=True)
-        for image_path in message.get("images", []):
-            if Path(image_path).exists():
-                st.image(image_path)
+        render_answer(message["content"], message.get("images", {}))
 
 # 6. 사용자 입력 및 추론
 if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소 알려줘)"):
@@ -64,7 +91,7 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소
     # Pass-Master 답변 생성
     with st.chat_message("assistant"):
         response = "" # 결과값 담을 변수
-        image_paths = []
+        images_by_question = {}
         status_placeholder = st.empty()
 
         with status_placeholder.container():
@@ -76,7 +103,7 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소
                         status.update(label=event["message"])
                     elif isinstance(event, dict) and event.get("type") == "answer":
                         response = event["content"]
-                        image_paths = event.get("images", [])
+                        images_by_question = event.get("images", {})
                     else:
                         response = event
 
@@ -85,13 +112,10 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 프로토콜 3요소
         status_placeholder.empty()
         
         # 3. 최종 결과 화면 출력
-        st.markdown(response, unsafe_allow_html=True)
-        for image_path in image_paths:
-            if Path(image_path).exists():
-                st.image(image_path)
+        render_answer(response, images_by_question)
             
     st.session_state.messages.append({
         "role": "assistant",
         "content": response,
-        "images": image_paths
+        "images": images_by_question
     })
