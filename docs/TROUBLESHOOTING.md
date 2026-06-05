@@ -1,4 +1,4 @@
-# Pass-Master Troubleshooting
+# Pass-Master Troubleshooting 
 
 Pass-Master-GraphRAG에서 실제 장애, 데이터 누락, 검색 품질 저하로 이어질 수 있는 문제만 정리한다.
 
