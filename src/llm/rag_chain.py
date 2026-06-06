@@ -229,6 +229,7 @@ class PassMasterChain:
                     "- 이 요청은 이전 검색 결과의 기출 더보기입니다.\n"
                     "- [단원 정보], [요약 정보], [보충 설명], [합격 포인트]는 반복하지 마십시오.\n"
                     "- [실제 기출 문제] 섹션만 출력하십시오.\n"
+                    "- 각 문제의 정답은 반드시 <span class=\"answer-mask\">정답: [내용]</span> 형식으로 마스킹하십시오.\n"
                     "- 제공된 문제 원문과 코드는 LLM이 읽기 좋게 줄바꿈과 코드블럭을 정리하되, 문제 내용과 정답은 바꾸지 마십시오.\n"
                 )
                 image_paths = self.retriever.collect_image_paths(
