@@ -7,12 +7,14 @@ ANSWER_MASK_HTML = '<span class="answer-mask">정답: [내용]</span>'
 DEFAULT_LOCAL_MODEL = "gemma4:e4b"
 
 
+# 최종 답변 프롬프트가 OpenAI/API 모델용인지 로컬 모델용인지 고를 때 사용한다.
 def get_prompt_profile(model_name: str | None = None) -> str:
     """Return the prompt profile used by answer-generation prompts."""
     model = model_name or os.getenv("LLM_MODEL", DEFAULT_LOCAL_MODEL)
     return "openai" if "openai" in model.lower() else "local"
 
 
+# 최종 답변 생성용 메인 프롬프트다. 답변 형식, 기출 출력 규칙, 보충 설명 정책은 여기서 조정한다.
 def get_pass_master_prompt(model_name: str | None = None) -> ChatPromptTemplate:
     """
     Main RAG answer prompt.
@@ -50,6 +52,48 @@ def get_pass_master_prompt(model_name: str | None = None) -> ChatPromptTemplate:
     ])
 
 
+# 기출 더보기/전체보기 전용 프롬프트다. 단원 요약 없이 현재 범위의 문제만 출력할 때 사용한다.
+def get_question_only_prompt() -> ChatPromptTemplate:
+    """
+    Question-only prompt for pagination requests.
+
+    Edit this when tuning how "더 보여줘" or "전체 보여줘" formats
+    exam questions, answers, code blocks, and image tokens.
+    """
+    system_prompt = f"""당신은 국가기술자격증 실기 학습을 돕는 한국어 튜터 'Pass-Master'입니다.
+
+[기출 더보기 규칙]
+1. 모든 답변은 한국어로 작성하십시오.
+2. [학습 지식]에 제공된 현재 표시 범위의 기출 문제만 출력하십시오.
+3. [단원 정보], [요약 정보], [보충 설명], [합격 포인트]는 출력하지 마십시오.
+4. [실제 기출 문제] 섹션만 출력하십시오.
+5. 제공된 기출 문제는 일부만 고르지 말고 모두 출력하십시오.
+6. 문제 본문, 보기, 표, 빈칸, 조건, 출력 예시는 보존하십시오.
+7. 정답은 반드시 다음 HTML 형식으로 마스킹하십시오: {ANSWER_MASK_HTML}
+8. 기출 문제에 이미지 토큰이 있으면 해당 문제 설명 바로 다음 줄에 토큰을 그대로 출력하십시오. 예: [[IMAGE:2025_3_10]]
+9. 이미지 토큰의 철자, 대괄호, 문제 ID를 변경하지 마십시오.
+10. 소스코드와 SQL은 가능한 한 Markdown 코드 블록으로 감싸십시오.
+11. `Color Scripter`, `Colored by Color Scripter`, `cs [표]`, 줄번호만 이어진 문자열, 코드가 중복된 표는 크롤링 아티팩트로 보고 답변에서 제거하십시오.
+12. SQL 문은 SELECT, FROM, JOIN, ON, WHERE, GROUP BY, HAVING, ORDER BY 같은 주요 절 단위로 줄바꿈하십시오.
+13. SQL의 함수 호출과 괄호는 불필요하게 여러 줄로 쪼개지 말고 `count(*)`, `IN (...)`처럼 읽기 좋게 유지하십시오.
+14. 코드와 SQL을 정리하더라도 문제 내용, 코드 의미, 정답은 변경하지 마십시오."""
+
+    human_prompt = """[학습 지식]
+{context}
+
+[사용자 질문]
+{question}
+
+---
+[실제 기출 문제] 섹션만 답변하십시오."""
+
+    return ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", human_prompt),
+    ])
+
+
+# 대화 맥락을 독립 질문으로 바꾸기 위한 프롬프트다. 현재 Streamlit의 run_stream 경로에서는 직접 사용하지 않는다.
 def get_condense_question_prompt() -> ChatPromptTemplate:
     """
     Follow-up-question rewrite prompt.
@@ -67,12 +111,13 @@ def get_condense_question_prompt() -> ChatPromptTemplate:
     ])
 
 
+# Neo4j 벡터 검색 전에 사용자 질문을 검색어로 정제할 때 사용한다.
 def build_query_refine_prompt(query: str) -> str:
     """
     Search-keyword extraction prompt.
 
     Edit this when retrieval quality suffers because the query keyword is
-    too broad, too verbose, or misses language keywords such as Java/Python.
+    too broad, too verbose, or misses language keywords such as Java/Python/C/SQL.
     """
     return f"""사용자 질문: "{query}"
 
@@ -96,6 +141,7 @@ Neo4j 지식 베이스 검색에 필요한 핵심 개념어와 검색 구분어�
 추출된 검색어:"""
 
 
+# "방금", "그거", "정답만" 같은 후속 질문이 이전 답변을 재사용해도 되는지 판단할 때 사용한다.
 def build_context_decision_prompt(history, question: str) -> str:
     """
     History-reuse decision prompt.
@@ -115,6 +161,7 @@ def build_context_decision_prompt(history, question: str) -> str:
 답변:"""
 
 
+# 모든 모델에 공통으로 적용되는 최종 답변 규칙이다. 출력 구조나 정답 마스킹 정책은 여기서 바꾼다.
 def _get_common_answer_rules() -> str:
     return f"""당신은 국가기술자격증 실기 학습을 돕는 한국어 튜터 'Pass-Master'입니다.
 
@@ -153,9 +200,13 @@ def _get_common_answer_rules() -> str:
 6. 소스코드의 토큰, 변수명, 함수명, 연산자, 문자열, 숫자, 실행 순서는 절대 변경하지 마십시오.
 7. 소스코드를 출력할 때는 가능한 한 Markdown 코드 블록으로 감싸십시오.
 8. `Color Scripter`, `Colored by Color Scripter`, `cs [표]`, 줄번호만 이어진 문자열, 코드가 중복된 표는 크롤링 아티팩트로 보고 답변에서 제거하십시오.
-9. 크롤링 아티팩트를 제거하더라도 실제 문제 설명, 보기, 조건, 코드 의미, 정답은 변경하지 마십시오."""
+9. SQL 문은 SELECT, FROM, JOIN, ON, WHERE, GROUP BY, HAVING, ORDER BY 같은 주요 절 단위로 줄바꿈하십시오.
+10. SQL의 함수 호출과 괄호는 불필요하게 여러 줄로 쪼개지 말고 `count(*)`, `IN (...)`처럼 읽기 좋게 유지하십시오.
+11. 문제 원문에서 SQL이 토큰 단위로 줄바꿈되어 있어도, SQL 의미를 바꾸지 않는 범위에서 읽기 좋은 코드블럭으로 재정렬하십시오.
+12. 크롤링 아티팩트를 제거하더라도 실제 문제 설명, 보기, 조건, 코드 의미, 정답은 변경하지 마십시오."""
 
 
+# OpenAI API 모델을 사용할 때 추가되는 답변 전략이다. 모델 성능이 충분할 때의 설명 방식은 여기서 조정한다.
 def _get_openai_answer_strategy() -> str:
     return """[API 모델 답변 전략]
 - [학습 지식 기반 답변]과 [보충 설명]의 경계를 명확히 분리하십시오.
@@ -163,6 +214,7 @@ def _get_openai_answer_strategy() -> str:
 - Java, Python, C, SQL 등 프로그래밍 언어가 질문에 명시되면 다른 언어의 예시는 섞지 마십시오."""
 
 
+# 로컬 Ollama 모델을 사용할 때 추가되는 답변 전략이다. VRAM/성능 한계를 고려한 간결성 정책은 여기서 조정한다.
 def _get_local_answer_strategy() -> str:
     return """[로컬 모델 답변 전략]
 - 짧고 명확한 문장으로 답하십시오.
