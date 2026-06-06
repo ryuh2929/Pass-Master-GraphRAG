@@ -7,12 +7,14 @@ ANSWER_MASK_HTML = '<span class="answer-mask">정답: [내용]</span>'
 DEFAULT_LOCAL_MODEL = "gemma4:e4b"
 
 
+# 최종 답변 프롬프트가 OpenAI/API 모델용인지 로컬 모델용인지 고를 때 사용한다.
 def get_prompt_profile(model_name: str | None = None) -> str:
     """Return the prompt profile used by answer-generation prompts."""
     model = model_name or os.getenv("LLM_MODEL", DEFAULT_LOCAL_MODEL)
     return "openai" if "openai" in model.lower() else "local"
 
 
+# 최종 답변 생성용 메인 프롬프트다. 답변 형식, 기출 출력 규칙, 보충 설명 정책은 여기서 조정한다.
 def get_pass_master_prompt(model_name: str | None = None) -> ChatPromptTemplate:
     """
     Main RAG answer prompt.
@@ -50,6 +52,7 @@ def get_pass_master_prompt(model_name: str | None = None) -> ChatPromptTemplate:
     ])
 
 
+# 대화 맥락을 독립 질문으로 바꾸기 위한 프롬프트다. 현재 Streamlit의 run_stream 경로에서는 직접 사용하지 않는다.
 def get_condense_question_prompt() -> ChatPromptTemplate:
     """
     Follow-up-question rewrite prompt.
@@ -67,6 +70,7 @@ def get_condense_question_prompt() -> ChatPromptTemplate:
     ])
 
 
+# Neo4j 벡터 검색 전에 사용자 질문을 검색어로 정제할 때 사용한다.
 def build_query_refine_prompt(query: str) -> str:
     """
     Search-keyword extraction prompt.
@@ -96,6 +100,7 @@ Neo4j 지식 베이스 검색에 필요한 핵심 개념어와 검색 구분어�
 추출된 검색어:"""
 
 
+# "방금", "그거", "정답만" 같은 후속 질문이 이전 답변을 재사용해도 되는지 판단할 때 사용한다.
 def build_context_decision_prompt(history, question: str) -> str:
     """
     History-reuse decision prompt.
@@ -115,6 +120,7 @@ def build_context_decision_prompt(history, question: str) -> str:
 답변:"""
 
 
+# 모든 모델에 공통으로 적용되는 최종 답변 규칙이다. 출력 구조나 정답 마스킹 정책은 여기서 바꾼다.
 def _get_common_answer_rules() -> str:
     return f"""당신은 국가기술자격증 실기 학습을 돕는 한국어 튜터 'Pass-Master'입니다.
 
@@ -156,6 +162,7 @@ def _get_common_answer_rules() -> str:
 9. 크롤링 아티팩트를 제거하더라도 실제 문제 설명, 보기, 조건, 코드 의미, 정답은 변경하지 마십시오."""
 
 
+# OpenAI API 모델을 사용할 때 추가되는 답변 전략이다. 모델 성능이 충분할 때의 설명 방식은 여기서 조정한다.
 def _get_openai_answer_strategy() -> str:
     return """[API 모델 답변 전략]
 - [학습 지식 기반 답변]과 [보충 설명]의 경계를 명확히 분리하십시오.
@@ -163,6 +170,7 @@ def _get_openai_answer_strategy() -> str:
 - Java, Python, C, SQL 등 프로그래밍 언어가 질문에 명시되면 다른 언어의 예시는 섞지 마십시오."""
 
 
+# 로컬 Ollama 모델을 사용할 때 추가되는 답변 전략이다. VRAM/성능 한계를 고려한 간결성 정책은 여기서 조정한다.
 def _get_local_answer_strategy() -> str:
     return """[로컬 모델 답변 전략]
 - 짧고 명확한 문장으로 답하십시오.
