@@ -7,6 +7,7 @@ data/raw/*
 data/images/*
 *.pdf
 *.json
+!data/evaluation/question_concept_gold.seed.json
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

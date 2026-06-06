@@ -71,7 +71,7 @@ services:
 
   tei-reranker:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
-    profiles: ["local"]  # 'local' 프로필 지정
+    profiles: ["reranker"]  # 'reranker' 프로필 지정
     container_name: passmaster-tei-reranker
     ports:
       - "8081:80"
