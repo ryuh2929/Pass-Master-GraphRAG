@@ -76,7 +76,7 @@ def build_query_refine_prompt(query: str) -> str:
     Search-keyword extraction prompt.
 
     Edit this when retrieval quality suffers because the query keyword is
-    too broad, too verbose, or misses language keywords such as Java/Python.
+    too broad, too verbose, or misses language keywords such as Java/Python/C/SQL.
     """
     return f"""사용자 질문: "{query}"
 
@@ -159,7 +159,10 @@ def _get_common_answer_rules() -> str:
 6. 소스코드의 토큰, 변수명, 함수명, 연산자, 문자열, 숫자, 실행 순서는 절대 변경하지 마십시오.
 7. 소스코드를 출력할 때는 가능한 한 Markdown 코드 블록으로 감싸십시오.
 8. `Color Scripter`, `Colored by Color Scripter`, `cs [표]`, 줄번호만 이어진 문자열, 코드가 중복된 표는 크롤링 아티팩트로 보고 답변에서 제거하십시오.
-9. 크롤링 아티팩트를 제거하더라도 실제 문제 설명, 보기, 조건, 코드 의미, 정답은 변경하지 마십시오."""
+9. SQL 문은 SELECT, FROM, JOIN, ON, WHERE, GROUP BY, HAVING, ORDER BY 같은 주요 절 단위로 줄바꿈하십시오.
+10. SQL의 함수 호출과 괄호는 불필요하게 여러 줄로 쪼개지 말고 `count(*)`, `IN (...)`처럼 읽기 좋게 유지하십시오.
+11. 문제 원문에서 SQL이 토큰 단위로 줄바꿈되어 있어도, SQL 의미를 바꾸지 않는 범위에서 읽기 좋은 코드블럭으로 재정렬하십시오.
+12. 크롤링 아티팩트를 제거하더라도 실제 문제 설명, 보기, 조건, 코드 의미, 정답은 변경하지 마십시오."""
 
 
 # OpenAI API 모델을 사용할 때 추가되는 답변 전략이다. 모델 성능이 충분할 때의 설명 방식은 여기서 조정한다.
