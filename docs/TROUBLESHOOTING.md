@@ -10,6 +10,7 @@
 정리
 ```
 
+---
 
 ## 1. Neo4j 컨테이너 hostname 해석 실패
 
@@ -82,6 +83,7 @@ Docker Desktop 재시작, 네트워크 캐시, 컨테이너 재생성 이후에�
 
 Neo4j가 시작 직후 죽고 `UnknownHostException`이 보이면 비밀번호보다 hostname 설정을 먼저 확인한다.
 
+---
 
 ## 2. OpenAI API 모드에서 TEI 임베딩 서버가 실행되지 않음
 
@@ -149,6 +151,8 @@ OpenAI API 모드에서도 GraphRAG 검색 단계가 동일한 임베딩 모델�
 
 `LLM_MODEL=openai`는 LLM만 OpenAI로 바꾸는 설정이다. Neo4j와 TEI는 검색 백엔드이므로 계속 필요하다.
 
+---
+
 ## 3. Ollama가 받은 모델과 앱이 호출하는 모델이 다름
 
 ### 문제 상황
@@ -200,6 +204,8 @@ model_name = os.getenv("LLM_MODEL", "gemma4:e4b")
 ### 정리
 
 Ollama 모델 불일치 문제는 `.env`의 `LLM_MODEL`을 기준으로 확인한다. `docker-compose.yml`의 pull 명령은 fallback이 아니다.
+
+---
 
 ## 4. 관련 기출문제가 LLM 컨텍스트에 들어가지 않음
 
@@ -256,6 +262,8 @@ docker exec passmaster-neo4j cypher-shell -u neo4j -p <password> "MATCH (q:Quest
 ### 정리
 
 기출문제가 안 나오면 먼저 `Question` 식별 필드가 `problem_id`인지 확인한다.
+
+---
 
 ## 5. 크롤링 중 정답 박스와 문제 본문이 중첩되어 데이터가 누락됨
 
@@ -315,6 +323,8 @@ python src\test_exam_integrity.py
 ### 정리
 
 크롤링 로직을 수정한 뒤에는 반드시 `test_exam_integrity.py`로 20문항/정답/본문 무결성을 확인한다.
+
+---
 
 ## 6. PDF 청킹 과정에서 섹션이 누락되거나 합쳐짐
 
@@ -384,6 +394,8 @@ python src\test_check_ids.py
 
 PDF 청킹을 다시 돌린 뒤에는 `test_check_ids.py`로 섹션 ID 완전성을 먼저 확인한다.
 
+---
+
 ## 7. 의미적으로 비슷하지만 날짜가 맞지 않는 기출-개념 연결이 생성됨
 
 ### 문제 상황
@@ -434,6 +446,8 @@ MERGE (q)-[r:VERIFIED_MENTIONS]->(target)
 
 기출-개념 연결은 벡터 점수만 보지 않는다. `score threshold + practical_dates 검증 + 대표 Concept 1개`가 현재 프로젝트의 의도된 설계다.
 
+---
+
 ## 8. 검색 결과가 불용어 또는 요청 표현에 끌려감
 
 ### 문제 상황
@@ -483,6 +497,8 @@ def build_query_refine_prompt(query: str) -> str:
 ```text
 [Refine] 검색어 정제: 원문 -> 정제어
 ```
+
+---
 
 ## 9. GraphRAG 진행 상태가 실제 처리 단계와 맞지 않음
 
@@ -581,6 +597,8 @@ TEI 임베딩, Neo4j 검색, 컨텍스트 구성, LLM 생성 중 어느 단계�
 
 토큰 스트리밍은 필요하지 않다. 이 프로젝트에서 필요한 것은 LLM 내부 토큰 출력이 아니라 GraphRAG 파이프라인 단계 표시다.
 
+---
+
 ## 10. 기출 이미지가 문제와 1:1로 매칭되지 않음
 
 ### 문제 상황
@@ -660,6 +678,8 @@ for match in token_pattern.finditer(content):
 ### 정리
 
 기출 이미지는 답변 후처리 목록으로 붙이지 않는다. 문제 ID 기반 이미지 토큰을 사용해 LLM 답변 위치와 Streamlit 렌더링 위치를 연결한다.
+
+---
 
 ## 11. 기출 더보기 요청에서 답변 범위가 흐려짐
 
