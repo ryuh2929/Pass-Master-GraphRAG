@@ -1,7 +1,5 @@
 # Pass-Master Troubleshooting 
 
-Pass-Master-GraphRAG에서 실제 장애, 데이터 누락, 검색 품질 저하로 이어질 수 있는 문제만 정리한다.
-
 각 항목은 다음 기준으로 작성한다.
 
 ```text
@@ -11,6 +9,7 @@ Pass-Master-GraphRAG에서 실제 장애, 데이터 누락, 검색 품질 저하
 개선 효과
 정리
 ```
+
 
 ## 1. Neo4j 컨테이너 hostname 해석 실패
 
@@ -82,6 +81,7 @@ Docker Desktop 재시작, 네트워크 캐시, 컨테이너 재생성 이후에�
 ### 정리
 
 Neo4j가 시작 직후 죽고 `UnknownHostException`이 보이면 비밀번호보다 hostname 설정을 먼저 확인한다.
+
 
 ## 2. OpenAI API 모드에서 TEI 임베딩 서버가 실행되지 않음
 
