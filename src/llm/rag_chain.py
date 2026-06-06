@@ -17,6 +17,7 @@ from src.llm.prompts import (
     build_query_refine_prompt,
     get_condense_question_prompt,
     get_pass_master_prompt,
+    get_question_only_prompt,
 )
 
 load_dotenv()
@@ -41,6 +42,7 @@ class PassMasterChain:
         # 4. 프롬프트 템플릿 구성
         self.condense_question_prompt = get_condense_question_prompt()
         self.prompt = get_pass_master_prompt(os.getenv("LLM_MODEL"))
+        self.question_only_prompt = get_question_only_prompt()
 
         # 메인 RAG 체인
         base_chain = (
@@ -194,6 +196,7 @@ class PassMasterChain:
             image_paths = {}
             remaining_question_count = 0
             page_state = self.question_page_store.get(session_id)
+            answer_prompt = self.prompt
 
             yield {"type": "status", "message": "질문 맥락 분석 중..."}
             context_keywords = ["방금", "그거", "이거", "앞서", "다시", "정답만", "해설만"]
@@ -224,14 +227,7 @@ class PassMasterChain:
                     question_offset=question_offset,
                     question_limit=question_limit
                 )
-                context += (
-                    "\n\n### 응답 모드\n"
-                    "- 이 요청은 이전 검색 결과의 기출 더보기입니다.\n"
-                    "- [단원 정보], [요약 정보], [보충 설명], [합격 포인트]는 반복하지 마십시오.\n"
-                    "- [실제 기출 문제] 섹션만 출력하십시오.\n"
-                    "- 각 문제의 정답은 반드시 <span class=\"answer-mask\">정답: [내용]</span> 형식으로 마스킹하십시오.\n"
-                    "- 제공된 문제 원문과 코드는 LLM이 읽기 좋게 줄바꿈과 코드블럭을 정리하되, 문제 내용과 정답은 바꾸지 마십시오.\n"
-                )
+                answer_prompt = self.question_only_prompt
                 image_paths = self.retriever.collect_image_paths(
                     filtered_results,
                     question_offset=question_offset,
@@ -316,7 +312,7 @@ class PassMasterChain:
                     )
 
             yield {"type": "status", "message": "LLM 답변 생성 중..."}
-            prompt_value = self.prompt.invoke({
+            prompt_value = answer_prompt.invoke({
                 "history": recent_history,
                 "context": context,
                 "question": user_query,
