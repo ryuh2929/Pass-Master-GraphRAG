@@ -1,30 +1,34 @@
-# Question-Concept Evaluation Set
+# Evaluation Datasets
 
-문제-Concept 연결 알고리즘을 비교하기 위한 수동 검증 평가셋입니다.
+GraphRAG 검색과 Question-Concept 연결 품질을 비교하기 위한 수동 검증 평가셋입니다.
 
-## 파일
+## Files
 
-- `question_concept_gold.seed.json`: 초기 seed 평가셋입니다. `review_status`가 `confirmed`인 항목만 기본 평가에 사용합니다.
+- `question_concept_gold.seed.json`: 문제와 정답 Concept 연결을 검증하는 평가셋입니다.
+- `question_language_gold.seed.json`: 코드/SQL 문제의 언어 힌트 추출을 검증하는 평가셋입니다.
 
-## 필드
+## question_concept_gold.seed.json
 
 - `problem_id`: 기출 문제 ID입니다. 예: `2025_1_15`
-- `primary_concept`: 사람이 판단한 가장 중요한 Concept ID입니다.
-- `secondary_concepts`: 복합 문제에서 함께 관련될 수 있는 Concept ID 목록입니다.
+- `primary_concept`: 사람이 판단한 정답 Concept ID입니다.
 - `labels`: 평가와 분석에 사용할 태그입니다.
 - `review_status`: `confirmed` 또는 `needs_review`입니다.
 - `note`: 판단 근거 또는 추가 확인 사항입니다.
 
-## 평가 기준
+## question_language_gold.seed.json
 
-- `primary_concept`가 현재 DB의 `VERIFIED_MENTIONS` 연결에 있으면 정답으로 봅니다.
-- `primary_concept`는 없고 `secondary_concepts`만 맞으면 `secondary_only`로 분리합니다.
-- 연결이 없으면 `missing_link`, 문제 노드가 없으면 `missing_question`으로 분리합니다.
-- `needs_review` 항목은 사람이 확정하기 전까지 기본 정확도 계산에서 제외합니다.
+- `problem_id`: 기출 문제 ID입니다.
+- `practical_date`: 실기 출제 날짜입니다. 예: `25.11`
+- `expected_language`: 정답 언어 힌트입니다. `sql`, `c`, `java`, `python` 중 하나입니다.
+- `source`: 언어명이 문제에 직접 나온 경우 `explicit`, 코드 형태로 판단한 경우 `code_marker`입니다.
+- `has_malloc`: 문제 코드에 `malloc`이 등장하는지 여부입니다.
+- `has_free`: 문제 코드에 `free`가 등장하는지 여부입니다.
+- `review_status`: 현재는 전체 코드 문제를 `confirmed`로 둡니다.
+- `evidence`: 검토 편의를 위한 문제 원문 앞부분입니다.
 
-## 실행 방법
+## Run
 
-현재 Neo4j에 저장된 `VERIFIED_MENTIONS` 연결을 기준으로 baseline을 측정합니다.
+현재 Neo4j에 저장된 `VERIFIED_MENTIONS` 연결을 기준으로 Concept 연결 baseline을 측정합니다.
 
 ```powershell
 uv run python src\evaluation\evaluate_linking.py
