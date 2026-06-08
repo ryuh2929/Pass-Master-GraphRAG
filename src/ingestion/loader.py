@@ -177,10 +177,11 @@ class GraphDataManager:
         reranker = self._create_reranker()
         questions = self._fetch_questions_for_linking()
         reranker_top_k = int(os.getenv("RERANKER_TOP_K", "3"))
+        vector_top_k = int(os.getenv("VECTOR_TOP_K", "500"))
         links = []
 
         for index, question in enumerate(questions, start=1):
-            vector_scores = self._fetch_vector_scores(question["embedding"], top_k=30)
+            vector_scores = self._fetch_vector_scores(question["embedding"], top_k=vector_top_k)
             bm25_text = f"{question.get('question') or ''} {question.get('answer') or ''}"
             bm25_scores = ranker.get_scores(bm25_text)
             candidates = build_hybrid_candidates(

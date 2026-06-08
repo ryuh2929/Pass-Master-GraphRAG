@@ -23,7 +23,7 @@ CODE_HINT_PATTERNS: dict[str, list[Pattern[str]]] = {
     "sql": [
         re.compile(pattern, re.IGNORECASE)
         for pattern in [
-            r"\bsql\b",
+            r"sql\s*(문|명령어|코드)?",
             r"\bselect\b",
             r"\binsert\b",
             r"\bdelete\b",
@@ -68,6 +68,26 @@ CODE_HINT_PATTERNS: dict[str, list[Pattern[str]]] = {
 }
 
 
+# 문제 원문에 언어명이 직접 등장한 경우만 감지합니다.
+# 이 경우에는 평가셋을 보지 않고도 "해당 언어 단원 안에서 고르라"는 강한 힌트로 볼 수 있습니다.
+EXPLICIT_LANGUAGE_PATTERNS: dict[str, list[Pattern[str]]] = {
+    "sql": [re.compile(r"sql\s*(문|명령어|코드)?", re.IGNORECASE)],
+    "c": [re.compile(r"c\s*(언어|코드|프로그램)", re.IGNORECASE)],
+    "java": [re.compile(r"\bjava\b|자바", re.IGNORECASE)],
+    "python": [re.compile(r"\bpython\b|파이썬", re.IGNORECASE)],
+}
+
+
+# 명시 언어 문제가 연결될 수 있는 Concept 범위입니다.
+# 언어가 직접 주어진 문제는 이 범위 안에서 날짜가 맞고 vector 점수가 높은 Concept를 우선합니다.
+LANGUAGE_CONCEPT_IDS: dict[str, set[str]] = {
+    "sql": {str(section_id) for section_id in range(152, 175)},
+    "c": {"214", *{str(section_id) for section_id in range(216, 220)}},
+    "java": {"215", "216", *{str(section_id) for section_id in range(220, 224)}},
+    "python": {"216", *{str(section_id) for section_id in range(224, 232)}},
+}
+
+
 # Concept가 어떤 코드/SQL 계열인지 판별하는 규칙입니다.
 # Question에서 언어 힌트가 감지되면 이 값이 맞는 Concept만 후보로 남깁니다.
 CONCEPT_HINT_PATTERNS: dict[str, list[Pattern[str]]] = {
@@ -107,6 +127,16 @@ def detect_code_hints(text: str) -> set[str]:
 
     hints = set()
     for hint, patterns in CODE_HINT_PATTERNS.items():
+        if any(pattern.search(text) for pattern in patterns):
+            hints.add(hint)
+    return hints
+
+
+def detect_explicit_language_hints(text: str) -> set[str]:
+    """Question 원문에 명시된 언어명을 추출합니다."""
+
+    hints = set()
+    for hint, patterns in EXPLICIT_LANGUAGE_PATTERNS.items():
         if any(pattern.search(text) for pattern in patterns):
             hints.add(hint)
     return hints
@@ -224,19 +254,29 @@ def build_hybrid_candidates(
 
     처리 순서:
     1. 후보 union
-    2. 코드/SQL 힌트가 있으면 맞는 계열 Concept만 유지
-    3. practical_date가 맞지 않는 후보 제거
-    4. vector/BM25 점수를 각각 0~1로 정규화
-    5. 일반 문제와 코드 문제의 가중치를 다르게 적용
+    2. 언어명이 명시된 문제는 해당 언어 Concept ID 범위로 제한
+    3. 코드/SQL 힌트가 있으면 맞는 계열 Concept만 유지
+    4. practical_date가 맞지 않는 후보 제거
+    5. vector/BM25 점수를 각각 0~1로 정규화
+    6. 일반 문제와 코드 문제의 가중치를 다르게 적용
     """
 
+    explicit_language_hints = detect_explicit_language_hints(question_text)
     question_hints = detect_code_hints(question_text)
-    if question_hints:
+    explicit_language_concept_ids = _get_language_concept_ids(explicit_language_hints)
+    if explicit_language_hints:
+        # 언어명이 직접 주어진 문제는 BM25 키워드보다 해당 언어 범위 안의 vector 순위를 우선합니다.
+        vector_weight = 1.0
+        bm25_weight = 0.0
+    elif question_hints:
         # 코드/SQL 문제는 의미 유사도보다 키워드 매칭이 더 믿을 만한 경우가 많습니다.
         vector_weight = code_vector_weight
         bm25_weight = code_bm25_weight
 
-    candidate_ids = set(vector_scores) | set(bm25_scores)
+    if explicit_language_concept_ids:
+        candidate_ids = set(explicit_language_concept_ids)
+    else:
+        candidate_ids = set(vector_scores) | set(bm25_scores)
     valid_vector_scores = {}
     valid_bm25_scores = {}
 
@@ -245,8 +285,11 @@ def build_hybrid_candidates(
         if not concept:
             continue
 
+        if explicit_language_concept_ids and concept_id not in explicit_language_concept_ids:
+            continue
+
         # 언어 힌트가 있는 문제는 다른 언어 Concept로 연결되지 않도록 강하게 제한합니다.
-        if question_hints and question_hints.isdisjoint(concept.hint_types):
+        if not explicit_language_hints and question_hints and question_hints.isdisjoint(concept.hint_types):
             continue
 
         # 현재 평가 기준은 "출제 날짜 정보가 맞다"는 가정이므로 날짜 불일치 후보는 제외합니다.
@@ -342,6 +385,13 @@ def _detect_concept_hints(text: str) -> set[str]:
         if any(pattern.search(text) for pattern in patterns):
             hints.add(hint)
     return hints
+
+
+def _get_language_concept_ids(language_hints: set[str]) -> set[str]:
+    concept_ids = set()
+    for hint in language_hints:
+        concept_ids.update(LANGUAGE_CONCEPT_IDS.get(hint, set()))
+    return concept_ids
 
 
 def _date_matches(practical_date: str, concept_dates: list[str]) -> bool:
