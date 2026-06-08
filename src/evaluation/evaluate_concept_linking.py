@@ -1,10 +1,18 @@
 import argparse
 import json
 import os
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+warnings.filterwarnings(
+    "ignore",
+    message="Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.",
+    category=UserWarning,
+)
+
 from langchain_neo4j import Neo4jGraph
 
 
@@ -147,7 +155,26 @@ def evaluate(cases: list[GoldCase], predictions: dict[str, Prediction]) -> dict:
     return {"counts": counts, "results": results}
 
 
-def print_summary(gold_path: Path, include_needs_review: bool, evaluation: dict, show_correct: bool) -> None:
+def print_details(evaluation: dict, show_correct: bool) -> None:
+    detail_statuses = {"wrong", "missing_link", "missing_question"}
+    if show_correct:
+        detail_statuses.add("correct")
+
+    details = [row for row in evaluation["results"] if row["status"] in detail_statuses]
+    if not details:
+        return
+
+    print("=== Details ===")
+    for row in details:
+        print(f"- [{row['status']}] {row['problem_id']}")
+        print(f"  expected: {row['expected']}")
+        print(f"  predicted: {', '.join(row['predicted']) if row['predicted'] else '-'}")
+        print(f"  labels: {', '.join(row['labels']) if row['labels'] else '-'}")
+        if row["note"]:
+            print(f"  note: {row['note']}")
+
+
+def print_summary_stats(gold_path: Path, include_needs_review: bool, evaluation: dict) -> None:
     counts = evaluation["counts"]
     total = counts["total"]
     accuracy = counts["correct"] / total * 100 if total else 0
@@ -162,22 +189,16 @@ def print_summary(gold_path: Path, include_needs_review: bool, evaluation: dict,
     print(f"Missing question: {counts['missing_question']}")
     print(f"Accuracy: {accuracy:.2f}%")
 
-    detail_statuses = {"wrong", "missing_link", "missing_question"}
-    if show_correct:
-        detail_statuses.add("correct")
 
-    details = [row for row in evaluation["results"] if row["status"] in detail_statuses]
-    if not details:
-        return
-
-    print("\n=== Details ===")
-    for row in details:
-        print(f"- [{row['status']}] {row['problem_id']}")
-        print(f"  expected: {row['expected']}")
-        print(f"  predicted: {', '.join(row['predicted']) if row['predicted'] else '-'}")
-        print(f"  labels: {', '.join(row['labels']) if row['labels'] else '-'}")
-        if row["note"]:
-            print(f"  note: {row['note']}")
+def print_report(gold_path: Path, include_needs_review: bool, evaluation: dict, show_correct: bool) -> None:
+    print_details(evaluation=evaluation, show_correct=show_correct)
+    if evaluation["results"]:
+        print()
+    print_summary_stats(
+        gold_path=gold_path,
+        include_needs_review=include_needs_review,
+        evaluation=evaluation,
+    )
 
 
 def main() -> None:
@@ -191,7 +212,7 @@ def main() -> None:
     graph = create_graph()
     predictions = fetch_predictions(graph, [case.problem_id for case in cases])
     evaluation = evaluate(cases, predictions)
-    print_summary(
+    print_report(
         gold_path=gold_path,
         include_needs_review=args.include_needs_review,
         evaluation=evaluation,
