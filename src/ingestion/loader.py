@@ -12,7 +12,7 @@ warnings.filterwarnings(
 )
 
 from langchain_neo4j import Neo4jGraph
-from src.retrieval.hybrid import BM25ConceptRanker, build_hybrid_candidates
+from src.ingestion.hybrid_linker import BM25ConceptRanker, build_hybrid_candidates
 
 load_dotenv()
 
