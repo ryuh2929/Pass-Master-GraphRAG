@@ -9,6 +9,7 @@ data/images/*
 *.json
 !data/evaluation/question_concept_gold.seed.json
 !data/evaluation/question_language_gold.seed.json
+!data/evaluation/query_retrieval_gold.seed.json
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
