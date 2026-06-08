@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "beautifulsoup4>=4.14.3",
+    "kiwipiepy>=0.23.1",
     "langchain>=1.2.15",
     "langchain-community>=0.4.1",
     "langchain-neo4j>=0.9.0",
@@ -15,6 +16,7 @@ dependencies = [
     "neo4j>=6.1.0",
     "pdfplumber>=0.11.9",
     "python-dotenv>=1.2.2",
+    "rank-bm25>=0.2.2",
     "requests>=2.33.1",
     "streamlit>=1.56.0",
     "watchdog>=6.0.0",
