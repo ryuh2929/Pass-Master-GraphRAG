@@ -11,6 +11,7 @@ import re
 from typing import Pattern
 
 from rank_bm25 import BM25Okapi
+import requests
 
 from src.retrieval.tokenizer import build_bm25_document_text, tokenize_for_bm25
 
@@ -98,6 +99,7 @@ class HybridCandidate:
     vector_score: float
     bm25_score: float
     final_score: float
+    reranker_score: float | None = None
 
 
 def detect_code_hints(text: str) -> set[str]:
@@ -148,6 +150,61 @@ class BM25ConceptRanker:
             practical_dates=[str(value).strip() for value in concept.get("practical_dates") or []],
             hint_types=_detect_concept_hints(f"{title} {chapter} {document}"),
             tokens=tokenize_for_bm25(text),
+        )
+
+
+class RerankerClient:
+    """TEI reranker 서버로 후보 Concept를 재정렬합니다."""
+
+    def __init__(self, endpoint: str, timeout: float = 10.0):
+        self.endpoint = endpoint
+        self.timeout = timeout
+        self.available = self._check_available()
+
+    def rerank(self, question_text: str, candidates: list[HybridCandidate]) -> dict[str, float]:
+        if not self.available or not candidates:
+            return {}
+
+        texts = [self._candidate_text(candidate) for candidate in candidates]
+        try:
+            response = requests.post(
+                self.endpoint,
+                json={"query": question_text, "texts": texts},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except requests.RequestException:
+            self.available = False
+            return {}
+
+        scores = {}
+        for item in response.json():
+            index = item.get("index")
+            score = item.get("score")
+            if index is None or score is None:
+                continue
+
+            scores[candidates[int(index)].concept.section_id] = float(score)
+
+        return scores
+
+    def _check_available(self) -> bool:
+        try:
+            response = requests.post(
+                self.endpoint,
+                json={"query": "ping", "texts": ["ping"]},
+                timeout=2,
+            )
+            return response.ok
+        except requests.RequestException:
+            return False
+
+    def _candidate_text(self, candidate: HybridCandidate) -> str:
+        concept = candidate.concept
+        return " ".join(
+            part
+            for part in [concept.title, concept.chapter, concept.document]
+            if part
         )
 
 
@@ -222,6 +279,61 @@ def build_hybrid_candidates(
         )
 
     return sorted(candidates, key=lambda candidate: candidate.final_score, reverse=True)
+
+
+def rerank_candidates(
+    *,
+    question_text: str,
+    candidates: list[HybridCandidate],
+    reranker: RerankerClient | None,
+    top_k: int = 10,
+    hybrid_weight: float = 0.3,
+    reranker_weight: float = 0.7,
+) -> list[HybridCandidate]:
+    """Hybrid 상위 후보를 reranker로 한 번 더 재정렬합니다.
+
+    reranker는 후보 생성기가 아니라 재정렬기입니다. 정답 Concept가 후보군에 없으면
+    되살릴 수 없으므로, vector/BM25/date 검증 이후의 상위 후보에만 적용합니다.
+    """
+
+    if not reranker or not candidates:
+        return candidates
+
+    head = candidates[:top_k]
+    tail = candidates[top_k:]
+    reranker_scores = reranker.rerank(question_text, head)
+    if not reranker_scores:
+        return candidates
+
+    normalized_hybrid = _normalize_scores({
+        candidate.concept.section_id: candidate.final_score
+        for candidate in head
+    })
+    normalized_reranker = _normalize_scores(reranker_scores)
+
+    reranked = []
+    for candidate in head:
+        concept_id = candidate.concept.section_id
+        reranker_score = reranker_scores.get(concept_id)
+        if reranker_score is None:
+            reranked.append(candidate)
+            continue
+
+        final_score = (
+            hybrid_weight * normalized_hybrid.get(concept_id, 0.0)
+            + reranker_weight * normalized_reranker.get(concept_id, 0.0)
+        )
+        reranked.append(
+            HybridCandidate(
+                concept=candidate.concept,
+                vector_score=candidate.vector_score,
+                bm25_score=candidate.bm25_score,
+                final_score=final_score,
+                reranker_score=reranker_score,
+            )
+        )
+
+    return sorted(reranked, key=lambda candidate: candidate.final_score, reverse=True) + tail
 
 
 def _detect_concept_hints(text: str) -> set[str]:

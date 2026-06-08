@@ -12,7 +12,12 @@ warnings.filterwarnings(
 )
 
 from langchain_neo4j import Neo4jGraph
-from src.ingestion.hybrid_linker import BM25ConceptRanker, build_hybrid_candidates
+from src.ingestion.hybrid_linker import (
+    BM25ConceptRanker,
+    RerankerClient,
+    build_hybrid_candidates,
+    rerank_candidates,
+)
 
 load_dotenv()
 
@@ -167,16 +172,14 @@ class GraphDataManager:
 
     def link_with_semantic_verification(self, threshold=0.8):
         """Link each question to the best date-valid Concept using vector and BM25 scores."""
-        # Keep nodes intact and rebuild only the verified relationship layer.
-        print("Resetting VERIFIED_MENTIONS relationships...")
-        self.graph.query("MATCH (:Question)-[r:VERIFIED_MENTIONS]->(:Concept) DELETE r")
-
         concepts = self._fetch_concepts_for_bm25()
         ranker = BM25ConceptRanker(concepts)
+        reranker = self._create_reranker()
         questions = self._fetch_questions_for_linking()
+        reranker_top_k = int(os.getenv("RERANKER_TOP_K", "3"))
         links = []
 
-        for question in questions:
+        for index, question in enumerate(questions, start=1):
             vector_scores = self._fetch_vector_scores(question["embedding"], top_k=30)
             bm25_text = f"{question.get('question') or ''} {question.get('answer') or ''}"
             bm25_scores = ranker.get_scores(bm25_text)
@@ -186,6 +189,12 @@ class GraphDataManager:
                 vector_scores=vector_scores,
                 bm25_scores=bm25_scores,
                 ranker=ranker,
+            )
+            candidates = rerank_candidates(
+                question_text=question.get("question") or "",
+                candidates=candidates,
+                reranker=reranker,
+                top_k=reranker_top_k,
             )
 
             if not candidates:
@@ -198,7 +207,15 @@ class GraphDataManager:
                 "final_score": best.final_score,
                 "vector_score": best.vector_score,
                 "bm25_score": best.bm25_score,
+                "reranker_score": best.reranker_score,
             })
+
+            if index % 50 == 0:
+                print(f"Prepared hybrid links: {index}/{len(questions)}")
+
+        # Keep the old relationship layer until all new links are ready.
+        print("Resetting VERIFIED_MENTIONS relationships...")
+        self.graph.query("MATCH (:Question)-[r:VERIFIED_MENTIONS]->(:Concept) DELETE r")
 
         result = self.graph.query("""
         UNWIND $links AS link
@@ -207,12 +224,27 @@ class GraphDataManager:
         MERGE (q)-[r:VERIFIED_MENTIONS]->(c)
         SET r.similarity_score = link.final_score,
             r.vector_score = link.vector_score,
-            r.bm25_score = link.bm25_score
+            r.bm25_score = link.bm25_score,
+            r.reranker_score = link.reranker_score
         RETURN count(r) AS link_count
         """, {"links": links})
 
         link_count = result[0]["link_count"] if result else 0
         print(f"Hybrid verified links created: {link_count}")
+
+    def _create_reranker(self):
+        if os.getenv("USE_RERANKER", "true").lower() in {"0", "false", "no"}:
+            print("Reranker disabled by USE_RERANKER.")
+            return None
+
+        endpoint = os.getenv("RERANKER_ENDPOINT", "http://localhost:8081/rerank")
+        reranker = RerankerClient(endpoint=endpoint)
+        if reranker.available:
+            print(f"Reranker enabled: {endpoint}")
+            return reranker
+
+        print(f"Reranker unavailable, falling back to hybrid scores: {endpoint}")
+        return None
 
     def _fetch_concepts_for_bm25(self):
         return self.graph.query("""
