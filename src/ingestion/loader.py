@@ -2,8 +2,17 @@ import os
 import json
 import glob
 import requests
+import warnings
 from dotenv import load_dotenv
+
+warnings.filterwarnings(
+    "ignore",
+    message="Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.",
+    category=UserWarning,
+)
+
 from langchain_neo4j import Neo4jGraph
+from src.retrieval.hybrid import BM25ConceptRanker, build_hybrid_candidates
 
 load_dotenv()
 
@@ -157,34 +166,91 @@ class GraphDataManager:
         """)
 
     def link_with_semantic_verification(self, threshold=0.8):
-        """기존 검증 관계를 초기화하고 엄격한 로직으로 재연결"""
-        # 기존에 생성된 모든 VERIFIED_MENTIONS 관계 삭제 (노드는 유지, 선만 삭제)
-        print("🧹 기존 검증 관계 초기화 중...")
+        """Link each question to the best date-valid Concept using vector and BM25 scores."""
+        # Keep nodes intact and rebuild only the verified relationship layer.
+        print("Resetting VERIFIED_MENTIONS relationships...")
         self.graph.query("MATCH (:Question)-[r:VERIFIED_MENTIONS]->(:Concept) DELETE r")
 
-        """의미 유사도 확인 후 날짜 데이터로 검증하여 연결"""
-        # 1. 벡터 유사도로 후보 탐색
-        # 2. 문제(Question)가 속한 시험(Exam)의 날짜가 개념(Concept)의 출제 날짜에 있는지 검증
-        query = """
-        MATCH (q:Question)-[:HAS_QUESTION]-(e:Exam)
-        CALL db.index.vector.queryNodes('concept_index', 20, q.embedding) 
-        YIELD node AS c, score
-        WHERE score >= $threshold
-          AND any(d IN c.practical_dates WHERE trim(d) = trim(e.practical_dates))  // 날짜 검증 로직
-        
-        // 문제(q)별로 가장 점수가 높은 개념(c) 하나만 남기기
-        WITH q, c, score
-        ORDER BY q.problem_id, score DESC
-        WITH q, collect({concept: c, score: score})[0] AS best_match
+        concepts = self._fetch_concepts_for_bm25()
+        ranker = BM25ConceptRanker(concepts)
+        questions = self._fetch_questions_for_linking()
+        links = []
 
-        // 최종적으로 검증된 연결만 생성
-        MATCH (target:Concept {section_id: best_match.concept.section_id})
-        MERGE (q)-[r:VERIFIED_MENTIONS]->(target)
-        SET r.similarity_score = best_match.score
-        RETURN count(r) as link_count
-        """
-        result = self.graph.query(query, {"threshold": threshold})
-        print(f"✅ 검증된 의미적 연결 {result[0]['link_count']}개 생성 완료")
+        for question in questions:
+            vector_scores = self._fetch_vector_scores(question["embedding"], top_k=30)
+            bm25_text = f"{question.get('question') or ''} {question.get('answer') or ''}"
+            bm25_scores = ranker.get_scores(bm25_text)
+            candidates = build_hybrid_candidates(
+                question_text=question.get("question") or "",
+                practical_date=question.get("practical_date") or "",
+                vector_scores=vector_scores,
+                bm25_scores=bm25_scores,
+                ranker=ranker,
+            )
+
+            if not candidates:
+                continue
+
+            best = candidates[0]
+            links.append({
+                "problem_id": question["problem_id"],
+                "section_id": best.concept.section_id,
+                "final_score": best.final_score,
+                "vector_score": best.vector_score,
+                "bm25_score": best.bm25_score,
+            })
+
+        result = self.graph.query("""
+        UNWIND $links AS link
+        MATCH (q:Question {problem_id: link.problem_id})
+        MATCH (c:Concept {section_id: link.section_id})
+        MERGE (q)-[r:VERIFIED_MENTIONS]->(c)
+        SET r.similarity_score = link.final_score,
+            r.vector_score = link.vector_score,
+            r.bm25_score = link.bm25_score
+        RETURN count(r) AS link_count
+        """, {"links": links})
+
+        link_count = result[0]["link_count"] if result else 0
+        print(f"Hybrid verified links created: {link_count}")
+
+    def _fetch_concepts_for_bm25(self):
+        return self.graph.query("""
+        MATCH (c:Concept)
+        OPTIONAL MATCH (c)-[:BELONGS_TO]->(ch:Chapter)
+        RETURN
+            c.section_id AS section_id,
+            c.title AS title,
+            c.document AS document,
+            c.practical_dates AS practical_dates,
+            ch.name AS chapter
+        """)
+
+    def _fetch_questions_for_linking(self):
+        return self.graph.query("""
+        MATCH (q:Question)-[:HAS_QUESTION]-(e:Exam)
+        WHERE q.embedding IS NOT NULL
+        RETURN
+            q.problem_id AS problem_id,
+            q.question AS question,
+            q.answer AS answer,
+            q.embedding AS embedding,
+            e.practical_dates AS practical_date
+        ORDER BY q.problem_id
+        """)
+
+    def _fetch_vector_scores(self, embedding, top_k=30):
+        rows = self.graph.query("""
+        CALL db.index.vector.queryNodes('concept_index', $top_k, $vector)
+        YIELD node AS c, score
+        RETURN c.section_id AS section_id, score
+        """, {"top_k": top_k, "vector": embedding})
+
+        return {
+            str(row["section_id"]): float(row["score"])
+            for row in rows
+            if row["score"] >= 0
+        }
 
 if __name__ == "__main__":
     import sys
