@@ -233,8 +233,8 @@ class GraphDataManager:
         print(f"Hybrid verified links created: {link_count}")
 
     def _create_reranker(self):
-        if os.getenv("USE_RERANKER", "true").lower() in {"0", "false", "no"}:
-            print("Reranker disabled by USE_RERANKER.")
+        if os.getenv("USE_RERANKER", "false").lower() not in {"1", "true", "yes"}:
+            print("Reranker disabled. Set USE_RERANKER=true to enable.")
             return None
 
         endpoint = os.getenv("RERANKER_ENDPOINT", "http://localhost:8081/rerank")
