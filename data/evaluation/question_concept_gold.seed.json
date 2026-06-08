@@ -21,11 +21,25 @@
     "note": "C언어 문법보다 pseudo code 기반의 화이트박스 테스트 검증 기준 문제로 판단"
   },
   {
-    "problem_id": "2024_3_3",
-    "primary_concept": "167",
-    "labels": ["mislinked", "sql", "subquery"],
-    "review_status": "needs_review",
-    "note": "24.10 출제 기록이 있는 하위 질의 문제. JOIN/GROUP BY도 포함되지만 169, 171에는 해당 출제 날짜가 없음"
+    "problem_id": "2024_3_17",
+    "primary_concept": "190",
+    "labels": ["security", "network", "vpn"],
+    "review_status": "confirmed",
+    "note": "공용 네트워크를 통해 사설 네트워크를 확장하고 IPsec/SSL/L2TP를 예로 드는 VPN 문제"
+  },
+  {
+    "problem_id": "2024_3_4",
+    "primary_concept": "243",
+    "labels": ["os", "page_replacement", "lru"],
+    "review_status": "confirmed",
+    "note": "페이지 참조 순서를 보고 LRU 페이지 부재 횟수를 계산하는 문제"
+  },
+  {
+    "problem_id": "2024_2_5",
+    "primary_concept": "124",
+    "labels": ["security", "network", "ipsec"],
+    "review_status": "confirmed",
+    "note": "Network layer에서 IP 패킷을 암호화/인증하고 VPN 구현에 쓰이는 IPsec 설명 문제"
   },
   {
     "problem_id": "2024_1_14",
@@ -56,11 +70,11 @@
     "note": "Boundary Value Analysis 정답의 블랙박스 테스트 종류 문제. 22.10 출제 기록은 136에만 있음"
   },
   {
-    "problem_id": "2022_1_15",
-    "primary_concept": "214",
-    "labels": ["mislinked", "c", "operator"],
-    "review_status": "needs_review",
-    "note": "정수를 역순으로 출력하기 위한 C 연산자 문제. 기존 연결은 Python 단원"
+    "problem_id": "2022_1_1",
+    "primary_concept": "281",
+    "labels": ["storage", "raid"],
+    "review_status": "confirmed",
+    "note": "Striping 방식과 I/O 로드 분산을 설명하는 RAID 단계 문제"
   },
   {
     "problem_id": "2021_2_9",
