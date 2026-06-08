@@ -15,7 +15,6 @@ DEFAULT_GOLD_PATH = Path("data/evaluation/question_concept_gold.seed.json")
 class GoldCase:
     problem_id: str
     primary_concept: str
-    secondary_concepts: list[str]
     labels: list[str]
     review_status: str
     note: str
@@ -64,7 +63,6 @@ def load_gold_cases(gold_path: Path, include_needs_review: bool) -> list[GoldCas
             GoldCase(
                 problem_id=str(item["problem_id"]),
                 primary_concept=str(item["primary_concept"]),
-                secondary_concepts=[str(value) for value in item.get("secondary_concepts", [])],
                 labels=[str(value) for value in item.get("labels", [])],
                 review_status=review_status,
                 note=str(item.get("note", "")),
@@ -113,7 +111,6 @@ def evaluate(cases: list[GoldCase], predictions: dict[str, Prediction]) -> dict:
         "total": len(cases),
         "correct": 0,
         "wrong": 0,
-        "secondary_only": 0,
         "missing_link": 0,
         "missing_question": 0,
     }
@@ -124,7 +121,6 @@ def evaluate(cases: list[GoldCase], predictions: dict[str, Prediction]) -> dict:
             Prediction(case.problem_id, question_exists=False, predicted_concepts=[]),
         )
         predicted_set = set(prediction.predicted_concepts)
-        secondary_set = set(case.secondary_concepts)
 
         if not prediction.question_exists:
             status = "missing_question"
@@ -132,8 +128,6 @@ def evaluate(cases: list[GoldCase], predictions: dict[str, Prediction]) -> dict:
             status = "missing_link"
         elif case.primary_concept in predicted_set:
             status = "correct"
-        elif predicted_set & secondary_set:
-            status = "secondary_only"
         else:
             status = "wrong"
 
@@ -143,7 +137,6 @@ def evaluate(cases: list[GoldCase], predictions: dict[str, Prediction]) -> dict:
                 "status": status,
                 "problem_id": case.problem_id,
                 "expected": case.primary_concept,
-                "secondary": case.secondary_concepts,
                 "predicted": prediction.predicted_concepts,
                 "labels": case.labels,
                 "review_status": case.review_status,
@@ -165,12 +158,11 @@ def print_summary(gold_path: Path, include_needs_review: bool, evaluation: dict,
     print(f"Total: {total}")
     print(f"Correct: {counts['correct']}")
     print(f"Wrong: {counts['wrong']}")
-    print(f"Secondary only: {counts['secondary_only']}")
     print(f"Missing link: {counts['missing_link']}")
     print(f"Missing question: {counts['missing_question']}")
     print(f"Accuracy: {accuracy:.2f}%")
 
-    detail_statuses = {"wrong", "secondary_only", "missing_link", "missing_question"}
+    detail_statuses = {"wrong", "missing_link", "missing_question"}
     if show_correct:
         detail_statuses.add("correct")
 
@@ -182,7 +174,6 @@ def print_summary(gold_path: Path, include_needs_review: bool, evaluation: dict,
     for row in details:
         print(f"- [{row['status']}] {row['problem_id']}")
         print(f"  expected: {row['expected']}")
-        print(f"  secondary: {', '.join(row['secondary']) if row['secondary'] else '-'}")
         print(f"  predicted: {', '.join(row['predicted']) if row['predicted'] else '-'}")
         print(f"  labels: {', '.join(row['labels']) if row['labels'] else '-'}")
         if row["note"]:

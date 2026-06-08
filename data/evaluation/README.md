@@ -31,23 +31,23 @@ GraphRAG 검색과 Question-Concept 연결 품질을 비교하기 위한 수동 
 현재 Neo4j에 저장된 `VERIFIED_MENTIONS` 연결을 기준으로 Concept 연결 baseline을 측정합니다.
 
 ```powershell
-uv run python src\evaluation\evaluate_linking.py
+uv run python src\evaluation\evaluate_concept_linking.py
 ```
 
 로컬 `uv` 캐시 오류가 나면 프로젝트 내부 캐시를 지정해서 실행합니다.
 
 ```powershell
-$env:UV_CACHE_DIR=".uv-cache"; uv run python src\evaluation\evaluate_linking.py
+$env:UV_CACHE_DIR=".uv-cache"; uv run python src\evaluation\evaluate_concept_linking.py
 ```
 
 검토 중인 샘플까지 포함하려면 다음 옵션을 사용합니다.
 
 ```powershell
-uv run python src\evaluation\evaluate_linking.py --include-needs-review
+uv run python src\evaluation\evaluate_concept_linking.py --include-needs-review
 ```
 
 정답 처리된 케이스까지 모두 보고 싶으면 다음 옵션을 사용합니다.
 
 ```powershell
-uv run python src\evaluation\evaluate_linking.py --show-correct
+uv run python src\evaluation\evaluate_concept_linking.py --show-correct
 ```
