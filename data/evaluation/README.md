@@ -20,10 +20,10 @@ GraphRAG 검색과 Question-Concept 연결 품질을 비교하기 위한 수동 
 - `problem_id`: 기출 문제 ID입니다.
 - `practical_date`: 실기 출제 날짜입니다. 예: `25.11`
 - `expected_language`: 정답 언어 힌트입니다. `sql`, `c`, `java`, `python` 중 하나입니다.
-- `source`: 언어명이 문제에 직접 나온 경우 `explicit`, 코드 형태로 판단한 경우 `code_marker`입니다.
-- `has_malloc`: 문제 코드에 `malloc`이 등장하는지 여부입니다.
-- `has_free`: 문제 코드에 `free`가 등장하는지 여부입니다.
-- `review_status`: 현재는 전체 코드 문제를 `confirmed`로 둡니다.
+- `primary_concept`: 출제 날짜와 문제 내용을 기준으로 연결할 Concept ID입니다.
+- `language_source`: 언어명이 문제에 직접 나온 경우 `explicit`, 코드 형태로 판단한 경우 `code_marker`입니다.
+- `concept_source`: 내용과 출제 날짜가 모두 맞으면 `content_date`, 날짜 후보로 보정했으면 `date_fallback`, 날짜가 맞는 후보가 없어 내용 기준으로만 둔 경우 `content_only`입니다.
+- `review_status`: 확정 항목은 `confirmed`, 날짜/내용 기준이 충돌하는 항목은 `needs_review`입니다.
 - `evidence`: 검토 편의를 위한 문제 원문 앞부분입니다.
 
 ## Run
