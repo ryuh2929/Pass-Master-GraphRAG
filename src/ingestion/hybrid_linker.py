@@ -247,6 +247,8 @@ def build_hybrid_candidates(
     ranker: BM25ConceptRanker,
     vector_weight: float = 0.6,
     bm25_weight: float = 0.4,
+    explicit_language_vector_weight: float = 1.0,
+    explicit_language_bm25_weight: float = 0.0,
     code_vector_weight: float = 0.3,
     code_bm25_weight: float = 0.7,
 ) -> list[HybridCandidate]:
@@ -265,9 +267,9 @@ def build_hybrid_candidates(
     question_hints = detect_code_hints(question_text)
     explicit_language_concept_ids = _get_language_concept_ids(explicit_language_hints)
     if explicit_language_hints:
-        # 언어명이 직접 주어진 문제는 BM25 키워드보다 해당 언어 범위 안의 vector 순위를 우선합니다.
-        vector_weight = 1.0
-        bm25_weight = 0.0
+        # 언어명이 직접 주어진 문제는 후보군을 먼저 좁히고, 해당 후보 안에서는 vector 점수를 우선합니다.
+        vector_weight = explicit_language_vector_weight
+        bm25_weight = explicit_language_bm25_weight
     elif question_hints:
         # 코드/SQL 문제는 의미 유사도보다 키워드 매칭이 더 믿을 만한 경우가 많습니다.
         vector_weight = code_vector_weight
