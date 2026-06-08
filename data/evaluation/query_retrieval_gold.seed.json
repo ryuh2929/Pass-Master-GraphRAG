@@ -1,0 +1,317 @@
+[
+  {
+    "case_id": "qr_001",
+    "query": "화이트박스 테스트의 검증 기준 알려줘",
+    "primary_concept": "134",
+    "acceptable_concepts": ["134"],
+    "intent": "criteria",
+    "difficulty": "hard",
+    "note": "화이트박스 테스트 자체가 아니라 문장/분기/조건/조건-분기 검증 기준을 찾아야 하는 케이스"
+  },
+  {
+    "case_id": "qr_002",
+    "query": "분기 커버리지랑 결정 검증 기준이 뭐야",
+    "primary_concept": "134",
+    "acceptable_concepts": ["134"],
+    "intent": "definition",
+    "difficulty": "hard",
+    "note": "커버리지/coverage 영문 음차와 결정 검증 기준의 동의어 매칭 확인"
+  },
+  {
+    "case_id": "qr_003",
+    "query": "화이트박스 테스트 종류에는 뭐가 있어",
+    "primary_concept": "133",
+    "acceptable_concepts": ["133"],
+    "intent": "types",
+    "difficulty": "medium",
+    "note": "검증 기준 134와 종류 133을 구분해야 하는 케이스"
+  },
+  {
+    "case_id": "qr_004",
+    "query": "블랙박스 테스트가 뭔지 설명해줘",
+    "primary_concept": "135",
+    "acceptable_concepts": ["135"],
+    "intent": "definition",
+    "difficulty": "easy",
+    "note": "블랙박스 테스트 정의 검색"
+  },
+  {
+    "case_id": "qr_005",
+    "query": "동치 분할이랑 경계값 분석은 어떤 테스트 종류야",
+    "primary_concept": "136",
+    "acceptable_concepts": ["136"],
+    "intent": "types",
+    "difficulty": "hard",
+    "note": "블랙박스 테스트의 종류를 구체 예시 키워드로 찾아야 하는 케이스"
+  },
+  {
+    "case_id": "qr_006",
+    "query": "Boundary Value Analysis 설명해줘",
+    "primary_concept": "136",
+    "acceptable_concepts": ["136"],
+    "intent": "english_synonym",
+    "difficulty": "hard",
+    "note": "경계값 분석의 영문 표현으로 블랙박스 테스트 종류를 찾아야 함"
+  },
+  {
+    "case_id": "qr_007",
+    "query": "테스트 오라클 종류 정리해줘",
+    "primary_concept": "145",
+    "acceptable_concepts": ["145"],
+    "intent": "types",
+    "difficulty": "medium",
+    "note": "참 오라클, 샘플링 오라클, 휴리스틱 오라클 등 종류 검색"
+  },
+  {
+    "case_id": "qr_008",
+    "query": "프로그램 실행하지 않고 소스코드 분석하는 테스트는 뭐야",
+    "primary_concept": "132",
+    "acceptable_concepts": ["132"],
+    "intent": "definition",
+    "difficulty": "medium",
+    "note": "정적 테스트를 직접 말하지 않고 설명으로 묻는 케이스"
+  },
+  {
+    "case_id": "qr_009",
+    "query": "테스트 케이스 구성 요소 알려줘",
+    "primary_concept": "110",
+    "acceptable_concepts": ["110"],
+    "intent": "components",
+    "difficulty": "medium",
+    "note": "테스트 케이스 명세서 구성 요소 검색"
+  },
+  {
+    "case_id": "qr_010",
+    "query": "파레토 법칙이랑 살충제 패러독스가 나오는 단원",
+    "primary_concept": "131",
+    "acceptable_concepts": ["131"],
+    "intent": "keyword",
+    "difficulty": "hard",
+    "note": "단원명이 아니라 대표 키워드로 애플리케이션 테스트 기본 원리를 찾아야 함"
+  },
+  {
+    "case_id": "qr_011",
+    "query": "패키지 다이어그램 import access 의존 관계 설명",
+    "primary_concept": "021",
+    "acceptable_concepts": ["021"],
+    "intent": "definition",
+    "difficulty": "medium",
+    "note": "패키지 다이어그램과 import/access 스테레오 타입 매칭"
+  },
+  {
+    "case_id": "qr_012",
+    "query": "정규화 과정 1NF 2NF 3NF BCNF 설명",
+    "primary_concept": "057",
+    "acceptable_concepts": ["057"],
+    "intent": "process",
+    "difficulty": "medium",
+    "note": "정규화 일반 정의 056이 아니라 정규화 과정 057을 기대"
+  },
+  {
+    "case_id": "qr_013",
+    "query": "반정규화는 왜 하는거야",
+    "primary_concept": "059",
+    "acceptable_concepts": ["059"],
+    "intent": "reason",
+    "difficulty": "medium",
+    "note": "성능 향상, 중복/통합/분리 키워드"
+  },
+  {
+    "case_id": "qr_014",
+    "query": "트랜잭션 ACID 특성 설명",
+    "primary_concept": "061",
+    "acceptable_concepts": ["061"],
+    "intent": "definition",
+    "difficulty": "medium",
+    "note": "원자성/일관성/독립성/영속성 검색"
+  },
+  {
+    "case_id": "qr_015",
+    "query": "SELECT 문 기본 형식이랑 GROUP BY HAVING 순서",
+    "primary_concept": "163",
+    "acceptable_concepts": ["163"],
+    "intent": "syntax",
+    "difficulty": "medium",
+    "note": "SQL SELECT 구문 검색"
+  },
+  {
+    "case_id": "qr_016",
+    "query": "두 테이블을 결합해서 튜플을 반환하는 SQL",
+    "primary_concept": "171",
+    "acceptable_concepts": ["171"],
+    "intent": "definition",
+    "difficulty": "medium",
+    "note": "JOIN을 직접 말하지 않고 설명으로 찾는 케이스"
+  },
+  {
+    "case_id": "qr_017",
+    "query": "EQUI JOIN 동등 조인은 어떻게 동작해",
+    "primary_concept": "172",
+    "acceptable_concepts": ["172"],
+    "intent": "definition",
+    "difficulty": "easy",
+    "note": "동등 조인 직접 검색"
+  },
+  {
+    "case_id": "qr_018",
+    "query": "LEFT OUTER JOIN 오른쪽에 매칭 안 되면 NULL 붙이는 조인",
+    "primary_concept": "173",
+    "acceptable_concepts": ["173"],
+    "intent": "definition",
+    "difficulty": "hard",
+    "note": "OUTER JOIN 세부 동작으로 검색"
+  },
+  {
+    "case_id": "qr_019",
+    "query": "SQL Injection 취약점 설명",
+    "primary_concept": "176",
+    "acceptable_concepts": ["176"],
+    "intent": "security",
+    "difficulty": "easy",
+    "note": "SQL 삽입 영문 키워드 검색"
+  },
+  {
+    "case_id": "qr_020",
+    "query": "C언어 for문 while문 if문 실행 결과 문제",
+    "primary_concept": "214",
+    "acceptable_concepts": ["214"],
+    "intent": "code_language",
+    "difficulty": "medium",
+    "note": "C언어 제어문 검색"
+  },
+  {
+    "case_id": "qr_021",
+    "query": "C언어 포인터 주소값 증감 연산 문제",
+    "primary_concept": "217",
+    "acceptable_concepts": ["217"],
+    "intent": "code_language",
+    "difficulty": "hard",
+    "note": "C언어 내부에서 제어문 214와 포인터 217을 구분해야 함"
+  },
+  {
+    "case_id": "qr_022",
+    "query": "C 구조체 struct 멤버 접근 실행 결과",
+    "primary_concept": "218",
+    "acceptable_concepts": ["218"],
+    "intent": "code_language",
+    "difficulty": "medium",
+    "note": "구조체 키워드 기반 검색"
+  },
+  {
+    "case_id": "qr_023",
+    "query": "C언어 재귀 함수 factorial 실행 결과",
+    "primary_concept": "219",
+    "acceptable_concepts": ["219"],
+    "intent": "code_language",
+    "difficulty": "hard",
+    "note": "사용자 정의 함수와 재귀 함수 키워드 매칭"
+  },
+  {
+    "case_id": "qr_024",
+    "query": "printf scanf fopen fclose 같은 C 표준 라이브러리",
+    "primary_concept": "232",
+    "acceptable_concepts": ["232"],
+    "intent": "code_language",
+    "difficulty": "hard",
+    "note": "C 제어문/함수가 아니라 표준 라이브러리 단원을 기대"
+  },
+  {
+    "case_id": "qr_025",
+    "query": "Java public class main String args 반복문 실행 결과",
+    "primary_concept": "215",
+    "acceptable_concepts": ["215"],
+    "intent": "code_language",
+    "difficulty": "medium",
+    "note": "Java 제어문 검색"
+  },
+  {
+    "case_id": "qr_026",
+    "query": "Java 클래스 생성자 System.out.print 출력 순서",
+    "primary_concept": "221",
+    "acceptable_concepts": ["220", "221"],
+    "intent": "code_language",
+    "difficulty": "hard",
+    "note": "Java 클래스 1/2가 인접하므로 220도 허용 후보로 둠"
+  },
+  {
+    "case_id": "qr_027",
+    "query": "Java abstract class extends 오버라이딩 문제",
+    "primary_concept": "223",
+    "acceptable_concepts": ["223"],
+    "intent": "code_language",
+    "difficulty": "hard",
+    "note": "Java 활용 단원의 추상 클래스/상속 키워드"
+  },
+  {
+    "case_id": "qr_028",
+    "query": "Python 문자열 입력 split 리스트 실행 결과",
+    "primary_concept": "224",
+    "acceptable_concepts": ["224"],
+    "intent": "code_language",
+    "difficulty": "medium",
+    "note": "Python 활용 1 검색"
+  },
+  {
+    "case_id": "qr_029",
+    "query": "Python set update remove dictionary 실행 결과",
+    "primary_concept": "225",
+    "acceptable_concepts": ["225"],
+    "intent": "code_language",
+    "difficulty": "medium",
+    "note": "Python 활용 2 검색"
+  },
+  {
+    "case_id": "qr_030",
+    "query": "Python class 변수 self 객체 교환 프로그램",
+    "primary_concept": "227",
+    "acceptable_concepts": ["227"],
+    "intent": "code_language",
+    "difficulty": "medium",
+    "note": "Python 클래스 검색"
+  },
+  {
+    "case_id": "qr_031",
+    "query": "Python range 초기값 최종값 증가값",
+    "primary_concept": "229",
+    "acceptable_concepts": ["229"],
+    "intent": "code_language",
+    "difficulty": "easy",
+    "note": "range 직접 검색"
+  },
+  {
+    "case_id": "qr_032",
+    "query": "Python 슬라이싱 a[:3] 문자열 일부 자르기",
+    "primary_concept": "230",
+    "acceptable_concepts": ["230"],
+    "intent": "code_language",
+    "difficulty": "medium",
+    "note": "slice/slicing과 한글 슬라이싱 매칭"
+  },
+  {
+    "case_id": "qr_033",
+    "query": "Python pop len append 주요 메소드",
+    "primary_concept": "231",
+    "acceptable_concepts": ["231"],
+    "intent": "code_language",
+    "difficulty": "easy",
+    "note": "Python 주요 메소드 검색"
+  },
+  {
+    "case_id": "qr_034",
+    "query": "인터페이스 구현 검증 도구 xUnit STAF FitNesse",
+    "primary_concept": "126",
+    "acceptable_concepts": ["126"],
+    "intent": "tool",
+    "difficulty": "hard",
+    "note": "도구명 중심 검색"
+  },
+  {
+    "case_id": "qr_035",
+    "query": "요구사항 검증 방법 리뷰 프로토타이핑 테스트",
+    "primary_concept": "117",
+    "acceptable_concepts": ["117"],
+    "intent": "method",
+    "difficulty": "medium",
+    "note": "실기 출제일이 없는 Concept도 runtime 검색에서는 찾아야 하는 케이스"
+  }
+]
