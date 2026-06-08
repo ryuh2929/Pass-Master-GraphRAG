@@ -355,8 +355,8 @@
     "expected_language": "sql",
     "primary_concept": "167",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "3. 아래의 employee테이블과 project테이블을 참고하여 보기의 SQL명령어에 알맞는 출력 값을 작성하시오. [Source Code] SELECT count( * ) FROM employee AS e JOI"
   },
   {
@@ -605,8 +605,8 @@
     "expected_language": "java",
     "primary_concept": "223",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "11. 다음은 Java 코드에 대한 알맞는 출력값을 작성하시오. [Source Code] class Parent { int compute( int num) { if (num < = 1 ) return num; ret"
   },
   {
@@ -665,8 +665,8 @@
     "expected_language": "java",
     "primary_concept": "223",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "1. 다음은 Java 코드이다. 올바른 출력 결과를 작성하시오. [Source Code] public class main{ public static void main( String [] args) { A b = ne"
   },
   {
@@ -743,10 +743,10 @@
     "problem_id": "2023_2_4",
     "practical_date": "23.7",
     "expected_language": "sql",
-    "primary_concept": "155",
+    "primary_concept": "160",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "4. 다음은 테이블에 데이터를 삽입하기 위한 과정이다. 보기의 조건식에 맞게 데이터 삽입을 위한 SQL문을 작성하시오. CREATE TABLE 학생 (학번 int,이름 varchar(20),학년 int,전공 varc"
   },
   {
@@ -835,8 +835,8 @@
     "expected_language": "sql",
     "primary_concept": "161",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "13.[학생] 테이블에서 학생 이름이 '민수'인 튜플을 삭제하는 쿼리를 작성하시오. 조건- 컬럼의 값이 문자열일 경우 작은 따움표 (' ')를 표시하시오.- SQL 마지막에 세미콜론(;)은 표기하지 않아도 관계 없습"
   },
   {
@@ -915,8 +915,8 @@
     "expected_language": "sql",
     "primary_concept": "163",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "12. STUDENT 테이블에서 컴퓨터과 학생 50명, 전기과 학생 100명, 인터넷과 학생 50명의 정보가 저장되어 있을 때, 다음 SQL문의 실행 결과에 따른 튜플의 수는? (단, DEPT 칼럼은 학과명이다.) "
   },
   {
@@ -1085,8 +1085,8 @@
     "expected_language": "sql",
     "primary_concept": "166",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "4. 다음 SQL 결과에 알맞는 쿼리을 작성하시오. SELECT name, score FROM 성적 ( 1 ) BY ( 2 ) ( 3 )"
   },
   {
@@ -1283,10 +1283,10 @@
     "problem_id": "2020_4_19",
     "practical_date": "20.11",
     "expected_language": "java",
-    "primary_concept": "215",
+    "primary_concept": "223",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "19. 다음은 자바 소스 코드이다. 출력 결과를 쓰시오. class parent{ public int compute(int num){ if(num <=1) return num; return compute(num-1)"
   },
   {
@@ -1383,10 +1383,10 @@
     "problem_id": "2020_3_9",
     "practical_date": "20.10",
     "expected_language": "sql",
-    "primary_concept": "154",
+    "primary_concept": "161",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "9. 학생 테이블에서 이름이 민수인 튜플을 삭제하는 SQL문을 작성하시오 [학생] [표] 학번 | 이름 | 점수 | 과목이름 1000 | 김정미 | 90 | 알고리즘 2000 | 강은미 | 95 | 데이터베이스 30"
   },
   {
@@ -1425,8 +1425,8 @@
     "expected_language": "sql",
     "primary_concept": "153",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "12. 학생 테이블의 name속성에 IDX_NAME 이름으로 인덱스 생성하는 SQL문을 작성하시오. [표] STID | NAME | SCORE | DEPTID 1000 | 김이름 | 90 | 1 2000 | 허이름 "
   },
   {
@@ -1495,8 +1495,8 @@
     "expected_language": "sql",
     "primary_concept": "163",
     "language_source": "explicit",
-    "concept_source": "date_fallback",
-    "review_status": "needs_review",
+    "concept_source": "content_date",
+    "review_status": "confirmed",
     "evidence": "6. STUDENT 테이블에서 컴퓨터과 학생 50명, 인터넷과 학생 100명, 사무자동화과 학생 50명의 정보가 저장되어 있을 때, 다음 SQL문의 실행 결과에 따른 튜플의 수는? (단, DEPT 칼럼은 학과명이다."
   }
 ]
