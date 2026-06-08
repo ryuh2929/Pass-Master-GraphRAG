@@ -39,8 +39,8 @@ CODE_HINT_PATTERNS: dict[str, list[Pattern[str]]] = {
         for pattern in [
             r"c\s*(언어|코드|프로그램)",
             r"#\s*include",
-            r"\bprintf\s*\(",
-            r"\bscanf\s*\(",
+            r"(?<!\.)\bprintf\s*\(",
+            r"(?<!\.)\bscanf\s*\(",
             r"\bmalloc\s*\(",
             r"\bfree\s*\(",
         ]
@@ -50,6 +50,7 @@ CODE_HINT_PATTERNS: dict[str, list[Pattern[str]]] = {
         for pattern in [
             r"\bjava\b",
             r"자바",
+            r"\bsystem\s*\.\s*out\s*\.\s*print(?:f|ln)?\s*\(",
             r"\bpublic\s+class\b",
             r"\bstring\s*\[\s*\]\s*args\b",
             r"\bextends\b",
@@ -178,7 +179,8 @@ class BM25ConceptRanker:
             chapter=chapter,
             document=document,
             practical_dates=[str(value).strip() for value in concept.get("practical_dates") or []],
-            hint_types=_detect_concept_hints(f"{title} {chapter} {document}"),
+            # 계열 판별은 본문 예시보다 제목/챕터가 더 신뢰도가 높습니다.
+            hint_types=_detect_concept_hints(f"{title} {chapter}"),
             tokens=tokenize_for_bm25(text),
         )
 
