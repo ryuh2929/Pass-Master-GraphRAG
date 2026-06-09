@@ -677,10 +677,10 @@ class PassMasterGraphChain:
         return re.search(r"<span\s+class=[\"']answer-mask[\"']>", response) is not None
 
     def _has_heading(self, response: str, heading: str) -> bool:
-        """[ID], [ID]:, [ID] : 처럼 콜론 유무가 다른 제목 표기를 모두 허용합니다."""
+        """대괄호/마크다운/콜론 유무와 관계없이 제목 텍스트가 있는지 확인합니다."""
         normalized_response = re.sub(r"\s+", "", response)
         normalized_heading = re.sub(r"\s+", "", heading)
-        return f"[{normalized_heading}]" in normalized_response
+        return normalized_heading in normalized_response
 
     def _has_label(self, response: str, label: str) -> bool:
         """단원 정보 안의 `ID:`, `출제 횟수:` 같은 라벨 표기를 검사합니다."""
