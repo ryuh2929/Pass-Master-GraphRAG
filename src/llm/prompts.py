@@ -94,6 +94,49 @@ def get_question_only_prompt() -> ChatPromptTemplate:
     ])
 
 
+# 기출 출력 검증에서 문제 ID 누락이 발견되었을 때 한 번 더 답변을 생성하기 위한 프롬프트다.
+def build_question_output_retry_prompt(
+    context: str,
+    question: str,
+    previous_response: str,
+    missing_question_ids: list[str],
+) -> str:
+    """
+    Question-output retry prompt.
+
+    Edit this when the LLM receives multiple exam questions but omits one
+    or changes question IDs during "더 보여줘"/initial answer generation.
+    """
+    missing_ids = ", ".join(missing_question_ids)
+    return f"""당신은 국가기술자격증 실기 학습을 돕는 한국어 튜터 'Pass-Master'입니다.
+
+이전 답변에서 반드시 출력해야 하는 기출 문제 ID가 누락되었습니다.
+
+[누락된 문제 ID]
+{missing_ids}
+
+[학습 지식]
+{context}
+
+[사용자 질문]
+{question}
+
+[이전 답변]
+{previous_response}
+
+---
+아래 규칙을 반드시 지켜 다시 답변하십시오.
+
+1. [학습 지식]의 [실제 기출 문제] 섹션에 있는 문제를 모두 출력하십시오.
+2. 누락된 문제 ID를 절대 빠뜨리지 마십시오.
+3. 문제 ID, 문제 내용, 보기, 조건, 정답은 변경하지 마십시오.
+4. 정답은 반드시 다음 HTML 형식으로 마스킹하십시오: {ANSWER_MASK_HTML}
+5. 이미지 토큰이 있으면 해당 문제 바로 다음 줄에 그대로 출력하십시오.
+6. 문제 의미를 바꾸지 않는 범위에서 줄바꿈과 코드/SQL 들여쓰기만 정리하십시오.
+
+[실제 기출 문제] 섹션만 답변하십시오."""
+
+
 # 대화 맥락을 독립 질문으로 바꾸기 위한 프롬프트다. 현재 Streamlit의 run_stream 경로에서는 직접 사용하지 않는다.
 def get_condense_question_prompt() -> ChatPromptTemplate:
     """

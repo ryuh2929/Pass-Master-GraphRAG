@@ -84,12 +84,12 @@ def render_answer(content: str, images_by_question: dict, image_max_height: int 
 # 2. 체인 인스턴스 초기화 (세션 스테이트 활용하여 1회만 로드)
 if "rag_chain" not in st.session_state:
     with st.spinner("🚀 Pass-Master 엔진 로드 중..."):
-        # LangGraph 버전은 기존 체인과 같은 동작을 목표로 한 병렬 구현입니다.
-        # USE_LANGGRAPH=true일 때만 사용해 기존 rag_chain.py를 안정 기준선으로 유지합니다.
-        if os.getenv("USE_LANGGRAPH", "false").lower() in {"1", "true", "yes"}:
-            st.session_state.rag_chain = PassMasterGraphChain()
-        else:
+        # LangGraph 체인을 기본값으로 사용합니다.
+        # 기존 LangChain 체인으로 되돌려 비교해야 할 때만 USE_LANGGRAPH=false를 지정합니다.
+        if os.getenv("USE_LANGGRAPH", "true").lower() in {"0", "false", "no"}:
             st.session_state.rag_chain = PassMasterChain()
+        else:
+            st.session_state.rag_chain = PassMasterGraphChain()
         st.session_state.messages = [] # 대화 기록 저장용
 
 # 3. 사이드바 - 대화 관리

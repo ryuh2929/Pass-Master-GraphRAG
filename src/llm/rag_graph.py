@@ -9,6 +9,7 @@ from langgraph.graph import END, StateGraph
 from src.llm.llm_switch import get_llm
 from src.llm.prompts import (
     build_context_decision_prompt,
+    build_question_output_retry_prompt,
     build_query_refine_prompt,
     get_pass_master_prompt,
     get_question_only_prompt,
@@ -39,6 +40,11 @@ class RAGGraphState(TypedDict, total=False):
     filtered_results: list[dict]
     image_paths: dict[str, list[str]]
     remaining_question_count: int
+    expected_question_ids: list[str]
+    missing_question_ids: list[str]
+    pending_page_state: dict | None
+    question_output_retry_count: int
+    question_output_valid: bool
     # 일반 답변과 기출 더보기 답변은 프롬프트 규칙이 다르므로 모드만 상태로 넘깁니다.
     answer_prompt_mode: Literal["default", "question_only"]
     response: str
@@ -50,7 +56,8 @@ class RAGGraphState(TypedDict, total=False):
 class PassMasterGraphChain:
     """기존 PassMasterChain.run_stream 흐름을 LangGraph 노드로 옮긴 버전입니다.
 
-    첫 적용 단계에서는 검토/재시도 로직을 추가하지 않고, 기존 동작과 같은 결과를 내는 것을 목표로 합니다.
+    기존 동작을 유지하되, 기출 문제 출력처럼 누락되면 사용자 경험이 크게 흔들리는 단계에는
+    LangGraph 검증 노드를 붙입니다.
     """
 
     def __init__(self):
@@ -86,6 +93,9 @@ class PassMasterGraphChain:
         graph.add_node("embed_query", self._embed_query)
         graph.add_node("retrieve_context", self._retrieve_context)
         graph.add_node("generate_answer", self._generate_answer)
+        graph.add_node("validate_question_output", self._validate_question_output)
+        graph.add_node("retry_question_output", self._retry_question_output)
+        graph.add_node("finalize_answer", self._finalize_answer)
         graph.add_node("save_history", self._save_history)
 
         graph.set_entry_point("analyze_request")
@@ -126,7 +136,17 @@ class PassMasterGraphChain:
         graph.add_edge("refine_query", "embed_query")
         graph.add_edge("embed_query", "retrieve_context")
         graph.add_edge("retrieve_context", "generate_answer")
-        graph.add_edge("generate_answer", "save_history")
+        graph.add_edge("generate_answer", "validate_question_output")
+        graph.add_conditional_edges(
+            "validate_question_output",
+            self._route_after_question_validation,
+            {
+                "retry": "retry_question_output",
+                "finalize": "finalize_answer",
+            },
+        )
+        graph.add_edge("retry_question_output", "validate_question_output")
+        graph.add_edge("finalize_answer", "save_history")
         graph.add_edge("save_history", END)
         return graph.compile()
 
@@ -146,6 +166,11 @@ class PassMasterGraphChain:
             "is_all_question_request": self._is_all_question_request(user_query),
             "image_paths": {},
             "remaining_question_count": 0,
+            "expected_question_ids": [],
+            "missing_question_ids": [],
+            "pending_page_state": None,
+            "question_output_retry_count": 0,
+            "question_output_valid": True,
             "answer_prompt_mode": "default",
             "context": None,
             "should_generate": True,
@@ -193,10 +218,19 @@ class PassMasterGraphChain:
             question_limit=question_limit,
         )
 
-        # 전체보기는 남은 문제를 모두 소비하고, 더보기는 기존 limit만큼만 offset을 이동합니다.
+        expected_question_ids = self._get_page_question_ids(
+            filtered_results,
+            question_offset=question_offset,
+            question_limit=question_limit,
+        )
+
+        # offset은 LLM 답변 검증이 끝난 뒤에만 커밋합니다.
+        # 생성 실패 상태에서 먼저 이동시키면 LLM이 빼먹은 문제가 다음 페이지에서 사라질 수 있습니다.
         shown_count = total_questions - question_offset if state.get("is_all_question_request") else page_state["limit"]
-        page_state["offset"] = min(question_offset + shown_count, total_questions)
-        self.question_page_store[state["session_id"]] = page_state
+        pending_page_state = {
+            **page_state,
+            "offset": min(question_offset + shown_count, total_questions),
+        }
 
         status = (
             "이전 검색 결과에서 남은 기출 전체 LLM 검수 준비 중..."
@@ -207,7 +241,10 @@ class PassMasterGraphChain:
             "context": context,
             "image_paths": image_paths,
             "answer_prompt_mode": "question_only",
-            "remaining_question_count": max(total_questions - page_state["offset"], 0),
+            "expected_question_ids": expected_question_ids,
+            "pending_page_state": pending_page_state,
+            "remaining_question_count": max(total_questions - pending_page_state["offset"], 0),
+            "question_output_retry_count": 0,
             "should_generate": True,
             "status": status,
         }
@@ -298,7 +335,7 @@ class PassMasterGraphChain:
             question_offset=question_offset,
             question_limit=question_limit,
         )
-        self.question_page_store[state["session_id"]] = {
+        pending_page_state = {
             "results": filtered_results,
             "offset": min(question_limit, total_questions),
             "limit": question_limit,
@@ -308,8 +345,15 @@ class PassMasterGraphChain:
             "filtered_results": filtered_results,
             "context": context,
             "image_paths": image_paths,
+            "expected_question_ids": self._get_page_question_ids(
+                filtered_results,
+                question_offset=question_offset,
+                question_limit=question_limit,
+            ),
+            "pending_page_state": pending_page_state,
+            "question_output_retry_count": 0,
             "remaining_question_count": max(
-                total_questions - self.question_page_store[state["session_id"]]["offset"],
+                total_questions - pending_page_state["offset"],
                 0,
             ),
             "status": "검색 결과 필터링 및 컨텍스트 구성 중...",
@@ -324,13 +368,79 @@ class PassMasterGraphChain:
             "question": state["user_query"],
         })
         response = self._extract_llm_content(self.llm.invoke(prompt_value))
-        response = self._append_remaining_question_notice(
-            response,
-            state.get("remaining_question_count", 0),
-        )
         return {
             "response": response,
             "status": "LLM 답변 생성 중...",
+        }
+
+    def _validate_question_output(self, state: RAGGraphState) -> dict:
+        """LLM 답변에 이번 페이지의 기출 문제 ID가 모두 포함됐는지 검사합니다."""
+        expected_question_ids = state.get("expected_question_ids", [])
+        if not expected_question_ids:
+            return {
+                "missing_question_ids": [],
+                "question_output_valid": True,
+            }
+
+        response = state.get("response", "")
+        missing_question_ids = [
+            question_id
+            for question_id in expected_question_ids
+            if not self._contains_question_id(response, question_id)
+        ]
+        is_valid = not missing_question_ids
+
+        return {
+            "missing_question_ids": missing_question_ids,
+            "question_output_valid": is_valid,
+            "status": (
+                "기출 문제 출력 검증 완료"
+                if is_valid
+                else f"기출 문제 출력 누락 감지: {', '.join(missing_question_ids)}"
+            ),
+        }
+
+    def _retry_question_output(self, state: RAGGraphState) -> dict:
+        """누락된 기출 ID가 있으면 같은 context로 답변 생성을 한 번 더 시도합니다."""
+        retry_count = state.get("question_output_retry_count", 0) + 1
+        retry_prompt = build_question_output_retry_prompt(
+            context=state.get("context", ""),
+            question=state["user_query"],
+            previous_response=state.get("response", ""),
+            missing_question_ids=state.get("missing_question_ids", []),
+        )
+        response = self._extract_llm_content(self.llm.invoke(retry_prompt))
+        return {
+            "response": response,
+            "question_output_retry_count": retry_count,
+            "status": "누락된 기출 문제 재생성 중...",
+        }
+
+    def _finalize_answer(self, state: RAGGraphState) -> dict:
+        """검증 결과에 따라 더보기 offset을 커밋하고 최종 안내 문구를 붙입니다."""
+        response = state.get("response", "")
+
+        if state.get("question_output_valid", True):
+            pending_page_state = state.get("pending_page_state")
+            if pending_page_state is not None:
+                self.question_page_store[state["session_id"]] = pending_page_state
+            response = self._append_remaining_question_notice(
+                response,
+                state.get("remaining_question_count", 0),
+            )
+        else:
+            # 재시도 후에도 누락되면 offset을 움직이지 않습니다.
+            # 사용자가 다시 "더 보여줘"를 입력했을 때 같은 묶음을 다시 시도할 수 있게 하기 위함입니다.
+            missing_ids = ", ".join(state.get("missing_question_ids", []))
+            response = (
+                f"{response}\n\n"
+                f"시스템 검증 결과, 다음 기출 문제가 답변에서 누락되었습니다: {missing_ids}. "
+                "누락 방지를 위해 다음 기출 페이지로는 아직 넘어가지 않았습니다."
+            )
+
+        return {
+            "response": response,
+            "status": "답변 검증 및 페이지 상태 반영 완료",
         }
 
     def _save_history(self, state: RAGGraphState) -> dict:
@@ -347,6 +457,14 @@ class PassMasterGraphChain:
         if state.get("context") is None:
             return "search"
         return "generate"
+
+    def _route_after_question_validation(self, state: RAGGraphState) -> str:
+        """기출 ID 누락이 있으면 한 번만 재생성하고, 이후에는 최종 응답으로 확정합니다."""
+        if state.get("question_output_valid", True):
+            return "finalize"
+        if state.get("question_output_retry_count", 0) < 1:
+            return "retry"
+        return "finalize"
 
     def run(self, user_query: str, session_id: str = "default_user"):
         """비스트리밍 호출용 실행 함수입니다. 기존 PassMasterChain.run()과 같은 외부 인터페이스를 맞춥니다."""
@@ -416,3 +534,22 @@ class PassMasterGraphChain:
     def _extract_llm_content(self, response):
         """LangChain 모델별 응답 객체 차이를 문자열로 통일합니다."""
         return response.content if hasattr(response, "content") else str(response)
+
+    def _get_page_question_ids(
+        self,
+        search_results: list,
+        question_offset: int,
+        question_limit: int | None,
+    ) -> list[str]:
+        """현재 LLM에 넘긴 페이지 범위의 문제 ID만 뽑아 검증 기준으로 사용합니다."""
+        questions = self.retriever.get_sorted_related_questions(search_results, primary_only=True)
+        if question_limit is None:
+            page_questions = questions[question_offset:]
+        else:
+            page_questions = questions[question_offset:question_offset + question_limit]
+        return [str(question.get("id")) for question in page_questions if question.get("id")]
+
+    def _contains_question_id(self, response: str, question_id: str) -> bool:
+        """문제 ID가 답변에 실제로 등장했는지 느슨하게 검사합니다."""
+        escaped_id = re.escape(question_id)
+        return re.search(rf"(?<![\w]){escaped_id}(?![\w])", response) is not None
