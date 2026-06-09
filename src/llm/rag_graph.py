@@ -709,7 +709,10 @@ class PassMasterGraphChain:
 
     def _has_label(self, response: str, label: str) -> bool:
         """단원 정보 안의 `ID:`, `출제 횟수:` 같은 라벨 표기를 검사합니다."""
-        normalized_response = re.sub(r"\s+", "", response)
+        # LLM이 `- **ID**: 133`처럼 Markdown 강조를 섞어도 화면에는 `ID: 133`으로 보입니다.
+        # 검증은 렌더링 전 원문을 보므로 Markdown 장식 문자를 제거한 뒤 라벨을 확인합니다.
+        normalized_response = re.sub(r"[*_`]", "", response)
+        normalized_response = re.sub(r"\s+", "", normalized_response)
         normalized_label = re.sub(r"\s+", "", label)
         return f"{normalized_label}:" in normalized_response
 
