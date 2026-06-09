@@ -1,5 +1,8 @@
+import json
 import os
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal, TypedDict
 
 from dotenv import load_dotenv
@@ -410,6 +413,16 @@ class PassMasterGraphChain:
             if not self._contains_question_id(response, question_id)
         ]
         is_valid = not missing_question_ids
+        if missing_question_ids:
+            self._log_validation_failure(
+                stage="question_output",
+                state=state,
+                errors=[f"기출 문제 ID 누락: {question_id}" for question_id in missing_question_ids],
+                extra={
+                    "missing_question_ids": missing_question_ids,
+                    "will_retry": state.get("question_output_retry_count", 0) < 1,
+                },
+            )
 
         return {
             "missing_question_ids": missing_question_ids,
@@ -467,6 +480,17 @@ class PassMasterGraphChain:
         for question_id in expected_image_question_ids:
             if not self._has_image_token(response, question_id):
                 errors.append(f"이미지 토큰 누락: [[IMAGE:{question_id}]]")
+
+        if errors:
+            self._log_validation_failure(
+                stage="answer_format",
+                state=state,
+                errors=errors,
+                extra={
+                    "will_retry": state.get("answer_format_retry_count", 0) < 1,
+                    "expected_image_question_ids": expected_image_question_ids,
+                },
+            )
 
         return {
             "answer_format_errors": errors,
@@ -667,3 +691,42 @@ class PassMasterGraphChain:
     def _has_image_token(self, response: str, question_id: str) -> bool:
         """이미지가 있는 문제의 `[[IMAGE:문제ID]]` 토큰이 답변에 남아 있는지 확인합니다."""
         return f"[[IMAGE:{question_id}]]" in response
+
+    def _log_validation_failure(
+        self,
+        stage: str,
+        state: RAGGraphState,
+        errors: list[str],
+        extra: dict | None = None,
+    ) -> None:
+        """검증 실패 사례를 JSONL로 남겨 나중에 재시도 품질을 평가할 수 있게 합니다."""
+        log_path = Path(
+            os.getenv("RAG_VALIDATION_LOG_PATH", "logs/rag_validation_failures.jsonl")
+        )
+        response = state.get("response", "")
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "stage": stage,
+            "errors": errors,
+            "session_id": state.get("session_id"),
+            "user_query": state.get("user_query"),
+            "refined_query": state.get("refined_query"),
+            "answer_prompt_mode": state.get("answer_prompt_mode"),
+            "question_output_retry_count": state.get("question_output_retry_count", 0),
+            "answer_format_retry_count": state.get("answer_format_retry_count", 0),
+            "expected_question_ids": state.get("expected_question_ids", []),
+            "image_question_ids": sorted((state.get("image_paths") or {}).keys()),
+            "remaining_question_count": state.get("remaining_question_count", 0),
+            "response_length": len(response),
+            "response_excerpt": response[:2000],
+        }
+        if extra:
+            record.update(extra)
+
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as log_file:
+                log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            # 로그 저장 실패가 사용자 답변 생성까지 막으면 안 되므로 콘솔에만 남깁니다.
+            print(f"[ValidationLog] 검증 실패 로그 저장 실패: {exc}")
