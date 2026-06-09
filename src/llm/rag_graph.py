@@ -1,5 +1,8 @@
+import json
 import os
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal, TypedDict
 
 from dotenv import load_dotenv
@@ -43,6 +46,7 @@ class RAGGraphState(TypedDict, total=False):
     remaining_question_count: int
     expected_question_ids: list[str]
     missing_question_ids: list[str]
+    unexpected_question_ids: list[str]
     pending_page_state: dict | None
     question_output_retry_count: int
     question_output_valid: bool
@@ -184,6 +188,7 @@ class PassMasterGraphChain:
             "remaining_question_count": 0,
             "expected_question_ids": [],
             "missing_question_ids": [],
+            "unexpected_question_ids": [],
             "pending_page_state": None,
             "question_output_retry_count": 0,
             "question_output_valid": True,
@@ -404,20 +409,47 @@ class PassMasterGraphChain:
             }
 
         response = state.get("response", "")
+        actual_question_ids = self._extract_question_ids(response)
+        expected_question_id_set = set(expected_question_ids)
         missing_question_ids = [
             question_id
             for question_id in expected_question_ids
             if not self._contains_question_id(response, question_id)
         ]
-        is_valid = not missing_question_ids
+        unexpected_question_ids = [
+            question_id
+            for question_id in actual_question_ids
+            if question_id not in expected_question_id_set
+        ]
+        is_valid = not missing_question_ids and not unexpected_question_ids
+        if missing_question_ids or unexpected_question_ids:
+            errors = [
+                f"기출 문제 ID 누락: {question_id}"
+                for question_id in missing_question_ids
+            ] + [
+                f"허용되지 않은 기출 문제 ID 출력: {question_id}"
+                for question_id in unexpected_question_ids
+            ]
+            self._log_validation_failure(
+                stage="question_output",
+                state=state,
+                errors=errors,
+                extra={
+                    "missing_question_ids": missing_question_ids,
+                    "unexpected_question_ids": unexpected_question_ids,
+                    "actual_question_ids": actual_question_ids,
+                    "will_retry": state.get("question_output_retry_count", 0) < 1,
+                },
+            )
 
         return {
             "missing_question_ids": missing_question_ids,
+            "unexpected_question_ids": unexpected_question_ids,
             "question_output_valid": is_valid,
             "status": (
                 "기출 문제 출력 검증 완료"
                 if is_valid
-                else f"기출 문제 출력 누락 감지: {', '.join(missing_question_ids)}"
+                else f"기출 문제 출력 범위 오류 감지: {', '.join(missing_question_ids + unexpected_question_ids)}"
             ),
         }
 
@@ -429,6 +461,7 @@ class PassMasterGraphChain:
             question=state["user_query"],
             previous_response=state.get("response", ""),
             missing_question_ids=state.get("missing_question_ids", []),
+            unexpected_question_ids=state.get("unexpected_question_ids", []),
         )
         response = self._extract_llm_content(self.llm.invoke(retry_prompt))
         return {
@@ -467,6 +500,17 @@ class PassMasterGraphChain:
         for question_id in expected_image_question_ids:
             if not self._has_image_token(response, question_id):
                 errors.append(f"이미지 토큰 누락: [[IMAGE:{question_id}]]")
+
+        if errors:
+            self._log_validation_failure(
+                stage="answer_format",
+                state=state,
+                errors=errors,
+                extra={
+                    "will_retry": state.get("answer_format_retry_count", 0) < 1,
+                    "expected_image_question_ids": expected_image_question_ids,
+                },
+            )
 
         return {
             "answer_format_errors": errors,
@@ -648,22 +692,70 @@ class PassMasterGraphChain:
         escaped_id = re.escape(question_id)
         return re.search(rf"(?<![\w]){escaped_id}(?![\w])", response) is not None
 
+    def _extract_question_ids(self, response: str) -> list[str]:
+        """답변에 등장한 `YYYY_R_N` 형태의 문제 ID를 등장 순서대로 추출합니다."""
+        question_ids = re.findall(r"(?<![\w])\d{4}_\d+_\d+(?![\w])", response)
+        return list(dict.fromkeys(question_ids))
+
     def _has_answer_mask(self, response: str) -> bool:
         """정답 마스킹 HTML이 답변에 포함되어 있는지 확인합니다."""
         return re.search(r"<span\s+class=[\"']answer-mask[\"']>", response) is not None
 
     def _has_heading(self, response: str, heading: str) -> bool:
-        """[ID], [ID]:, [ID] : 처럼 콜론 유무가 다른 제목 표기를 모두 허용합니다."""
+        """대괄호/마크다운/콜론 유무와 관계없이 제목 텍스트가 있는지 확인합니다."""
         normalized_response = re.sub(r"\s+", "", response)
         normalized_heading = re.sub(r"\s+", "", heading)
-        return f"[{normalized_heading}]" in normalized_response
+        return normalized_heading in normalized_response
 
     def _has_label(self, response: str, label: str) -> bool:
         """단원 정보 안의 `ID:`, `출제 횟수:` 같은 라벨 표기를 검사합니다."""
-        normalized_response = re.sub(r"\s+", "", response)
+        # LLM이 `- **ID**: 133`처럼 Markdown 강조를 섞어도 화면에는 `ID: 133`으로 보입니다.
+        # 검증은 렌더링 전 원문을 보므로 Markdown 장식 문자를 제거한 뒤 라벨을 확인합니다.
+        normalized_response = re.sub(r"[*_`]", "", response)
+        normalized_response = re.sub(r"\s+", "", normalized_response)
         normalized_label = re.sub(r"\s+", "", label)
         return f"{normalized_label}:" in normalized_response
 
     def _has_image_token(self, response: str, question_id: str) -> bool:
         """이미지가 있는 문제의 `[[IMAGE:문제ID]]` 토큰이 답변에 남아 있는지 확인합니다."""
         return f"[[IMAGE:{question_id}]]" in response
+
+    def _log_validation_failure(
+        self,
+        stage: str,
+        state: RAGGraphState,
+        errors: list[str],
+        extra: dict | None = None,
+    ) -> None:
+        """검증 실패 사례를 JSONL로 남겨 나중에 재시도 품질을 평가할 수 있게 합니다."""
+        log_path = Path(
+            os.getenv("RAG_VALIDATION_LOG_PATH", "logs/rag_validation_failures.jsonl")
+        )
+        response = state.get("response", "")
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "stage": stage,
+            "errors": errors,
+            "session_id": state.get("session_id"),
+            "user_query": state.get("user_query"),
+            "refined_query": state.get("refined_query"),
+            "answer_prompt_mode": state.get("answer_prompt_mode"),
+            "question_output_retry_count": state.get("question_output_retry_count", 0),
+            "answer_format_retry_count": state.get("answer_format_retry_count", 0),
+            "expected_question_ids": state.get("expected_question_ids", []),
+            "unexpected_question_ids": state.get("unexpected_question_ids", []),
+            "image_question_ids": sorted((state.get("image_paths") or {}).keys()),
+            "remaining_question_count": state.get("remaining_question_count", 0),
+            "response_length": len(response),
+            "response_excerpt": response[:2000],
+        }
+        if extra:
+            record.update(extra)
+
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as log_file:
+                log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            # 로그 저장 실패가 사용자 답변 생성까지 막으면 안 되므로 콘솔에만 남깁니다.
+            print(f"[ValidationLog] 검증 실패 로그 저장 실패: {exc}")
