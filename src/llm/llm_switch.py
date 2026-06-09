@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI
 
 def get_llm():
     model_name = os.getenv("LLM_MODEL", "gemma4:e4b")
-    target_temp = 0.1
+    target_temp = 0
     
     if "openai" in model_name.lower():
         # OpenAI 엔진 반환
