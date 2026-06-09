@@ -46,6 +46,7 @@ class RAGGraphState(TypedDict, total=False):
     remaining_question_count: int
     expected_question_ids: list[str]
     missing_question_ids: list[str]
+    unexpected_question_ids: list[str]
     pending_page_state: dict | None
     question_output_retry_count: int
     question_output_valid: bool
@@ -187,6 +188,7 @@ class PassMasterGraphChain:
             "remaining_question_count": 0,
             "expected_question_ids": [],
             "missing_question_ids": [],
+            "unexpected_question_ids": [],
             "pending_page_state": None,
             "question_output_retry_count": 0,
             "question_output_valid": True,
@@ -407,30 +409,47 @@ class PassMasterGraphChain:
             }
 
         response = state.get("response", "")
+        actual_question_ids = self._extract_question_ids(response)
+        expected_question_id_set = set(expected_question_ids)
         missing_question_ids = [
             question_id
             for question_id in expected_question_ids
             if not self._contains_question_id(response, question_id)
         ]
-        is_valid = not missing_question_ids
-        if missing_question_ids:
+        unexpected_question_ids = [
+            question_id
+            for question_id in actual_question_ids
+            if question_id not in expected_question_id_set
+        ]
+        is_valid = not missing_question_ids and not unexpected_question_ids
+        if missing_question_ids or unexpected_question_ids:
+            errors = [
+                f"기출 문제 ID 누락: {question_id}"
+                for question_id in missing_question_ids
+            ] + [
+                f"허용되지 않은 기출 문제 ID 출력: {question_id}"
+                for question_id in unexpected_question_ids
+            ]
             self._log_validation_failure(
                 stage="question_output",
                 state=state,
-                errors=[f"기출 문제 ID 누락: {question_id}" for question_id in missing_question_ids],
+                errors=errors,
                 extra={
                     "missing_question_ids": missing_question_ids,
+                    "unexpected_question_ids": unexpected_question_ids,
+                    "actual_question_ids": actual_question_ids,
                     "will_retry": state.get("question_output_retry_count", 0) < 1,
                 },
             )
 
         return {
             "missing_question_ids": missing_question_ids,
+            "unexpected_question_ids": unexpected_question_ids,
             "question_output_valid": is_valid,
             "status": (
                 "기출 문제 출력 검증 완료"
                 if is_valid
-                else f"기출 문제 출력 누락 감지: {', '.join(missing_question_ids)}"
+                else f"기출 문제 출력 범위 오류 감지: {', '.join(missing_question_ids + unexpected_question_ids)}"
             ),
         }
 
@@ -442,6 +461,7 @@ class PassMasterGraphChain:
             question=state["user_query"],
             previous_response=state.get("response", ""),
             missing_question_ids=state.get("missing_question_ids", []),
+            unexpected_question_ids=state.get("unexpected_question_ids", []),
         )
         response = self._extract_llm_content(self.llm.invoke(retry_prompt))
         return {
@@ -672,6 +692,11 @@ class PassMasterGraphChain:
         escaped_id = re.escape(question_id)
         return re.search(rf"(?<![\w]){escaped_id}(?![\w])", response) is not None
 
+    def _extract_question_ids(self, response: str) -> list[str]:
+        """답변에 등장한 `YYYY_R_N` 형태의 문제 ID를 등장 순서대로 추출합니다."""
+        question_ids = re.findall(r"(?<![\w])\d{4}_\d+_\d+(?![\w])", response)
+        return list(dict.fromkeys(question_ids))
+
     def _has_answer_mask(self, response: str) -> bool:
         """정답 마스킹 HTML이 답변에 포함되어 있는지 확인합니다."""
         return re.search(r"<span\s+class=[\"']answer-mask[\"']>", response) is not None
@@ -715,6 +740,7 @@ class PassMasterGraphChain:
             "question_output_retry_count": state.get("question_output_retry_count", 0),
             "answer_format_retry_count": state.get("answer_format_retry_count", 0),
             "expected_question_ids": state.get("expected_question_ids", []),
+            "unexpected_question_ids": state.get("unexpected_question_ids", []),
             "image_question_ids": sorted((state.get("image_paths") or {}).keys()),
             "remaining_question_count": state.get("remaining_question_count", 0),
             "response_length": len(response),

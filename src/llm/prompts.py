@@ -100,6 +100,7 @@ def build_question_output_retry_prompt(
     question: str,
     previous_response: str,
     missing_question_ids: list[str],
+    unexpected_question_ids: list[str] | None = None,
 ) -> str:
     """
     Question-output retry prompt.
@@ -107,13 +108,18 @@ def build_question_output_retry_prompt(
     Edit this when the LLM receives multiple exam questions but omits one
     or changes question IDs during "더 보여줘"/initial answer generation.
     """
-    missing_ids = ", ".join(missing_question_ids)
+    unexpected_question_ids = unexpected_question_ids or []
+    missing_ids = ", ".join(missing_question_ids) if missing_question_ids else "없음"
+    unexpected_ids = ", ".join(unexpected_question_ids) if unexpected_question_ids else "없음"
     return f"""당신은 국가기술자격증 실기 학습을 돕는 한국어 튜터 'Pass-Master'입니다.
 
-이전 답변에서 반드시 출력해야 하는 기출 문제 ID가 누락되었습니다.
+이전 답변에서 기출 문제 출력 범위 오류가 발견되었습니다.
 
 [누락된 문제 ID]
 {missing_ids}
+
+[출력하면 안 되는 문제 ID]
+{unexpected_ids}
 
 [학습 지식]
 {context}
@@ -129,10 +135,11 @@ def build_question_output_retry_prompt(
 
 1. [학습 지식]의 [실제 기출 문제] 섹션에 있는 문제를 모두 출력하십시오.
 2. 누락된 문제 ID를 절대 빠뜨리지 마십시오.
-3. 문제 ID, 문제 내용, 보기, 조건, 정답은 변경하지 마십시오.
-4. 정답은 반드시 다음 HTML 형식으로 마스킹하십시오: {ANSWER_MASK_HTML}
-5. 이미지 토큰이 있으면 해당 문제 바로 다음 줄에 그대로 출력하십시오.
-6. 문제 의미를 바꾸지 않는 범위에서 줄바꿈과 코드/SQL 들여쓰기만 정리하십시오.
+3. [학습 지식]에 없는 문제 ID나 [출력하면 안 되는 문제 ID]는 절대 출력하지 마십시오.
+4. 문제 ID, 문제 내용, 보기, 조건, 정답은 변경하지 마십시오.
+5. 정답은 반드시 다음 HTML 형식으로 마스킹하십시오: {ANSWER_MASK_HTML}
+6. 이미지 토큰이 있으면 해당 문제 바로 다음 줄에 그대로 출력하십시오.
+7. 문제 의미를 바꾸지 않는 범위에서 줄바꿈과 코드/SQL 들여쓰기만 정리하십시오.
 
 [실제 기출 문제] 섹션만 답변하십시오."""
 
