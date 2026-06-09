@@ -104,7 +104,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--details-strategy",
-        default="hybrid_60_40",
+        default="hybrid_80_20",
         choices=["vector_only", "bm25_only", *DEFAULT_WEIGHTS.keys()],
         help="--show-details로 상세 출력할 전략입니다.",
     )

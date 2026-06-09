@@ -78,9 +78,13 @@ class PassMasterChain:
         refined_query = self.llm.invoke(build_query_refine_prompt(query)).content.strip()
         print(f"🧹 [Refine] 검색어 정제: {query} -> {refined_query}")
         
-        # 2. 정제된 키워드로 임베딩 및 Neo4j 검색 수행
+        # 2. 정제된 키워드로 임베딩 및 Neo4j hybrid 검색 수행
         query_vector = self.embedder.get_embedding(refined_query)
-        raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
+        raw_results = self.retriever.search_concepts_with_questions(
+            query_vector=query_vector,
+            query_text=refined_query,
+            top_k=1,
+        )
         
         # 3. 유사도가 너무 낮은 결과는 무시하는 로직 추가 가능
         threshold = 0.7
@@ -277,8 +281,12 @@ class PassMasterChain:
                 yield {"type": "status", "message": "TEI 임베딩 생성 중..."}
                 query_vector = self.embedder.get_embedding(refined_query)
 
-                yield {"type": "status", "message": "Neo4j 지식 그래프 검색 중..."}
-                raw_results = self.retriever.search_concepts_with_questions(query_vector, top_k=3)
+                yield {"type": "status", "message": "Neo4j 지식 그래프 hybrid 검색 중..."}
+                raw_results = self.retriever.search_concepts_with_questions(
+                    query_vector=query_vector,
+                    query_text=refined_query,
+                    top_k=1,
+                )
 
                 yield {"type": "status", "message": "검색 결과 필터링 및 컨텍스트 구성 중..."}
                 threshold = 0.7

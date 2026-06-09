@@ -1,5 +1,7 @@
 from langchain_neo4j import Neo4jGraph
 
+from src.ingestion.hybrid_linker import BM25ConceptRanker
+
 class GraphRetriever:
     def __init__(self, url, username, password):
         """
@@ -7,13 +9,82 @@ class GraphRetriever:
         ingestion/loader.py에서 생성한 인덱스와 관계를 활용합니다.
         """
         self.graph = Neo4jGraph(url=url, username=username, password=password)
+        self._bm25_ranker = None
 
-    def search_concepts_with_questions(self, query_vector: list, top_k: int = 3):
+    def search_concepts_with_questions(
+        self,
+        query_vector: list,
+        query_text: str | None = None,
+        top_k: int = 1,
+        candidate_top_k: int = 100,
+        vector_weight: float = 0.8,
+        bm25_weight: float = 0.2,
+    ):
         """
-        사용자 질문 벡터를 기반으로 관련 개념(Concept)과 
-        그에 연결된 기출문제(Question)를 한꺼번에 추출합니다.
+        사용자 질문으로 관련 개념(Concept)과 연결 기출문제(Question)를 조회합니다.
+
+        query_text가 있으면 vector 후보를 넓게 가져온 뒤 BM25 점수를 20% 섞어 재정렬합니다.
+        query_text가 없으면 기존처럼 vector-only 검색으로 동작합니다.
         """
-        
+        if query_text:
+            return self.search_concepts_with_questions_hybrid(
+                query_vector=query_vector,
+                query_text=query_text,
+                top_k=top_k,
+                candidate_top_k=candidate_top_k,
+                vector_weight=vector_weight,
+                bm25_weight=bm25_weight,
+            )
+
+        return self._fetch_concepts_with_questions_by_vector(
+            query_vector=query_vector,
+            top_k=top_k,
+        )
+
+    def search_concepts_with_questions_hybrid(
+        self,
+        query_vector: list,
+        query_text: str,
+        top_k: int = 1,
+        candidate_top_k: int = 100,
+        vector_weight: float = 0.8,
+        bm25_weight: float = 0.2,
+    ):
+        """
+        runtime RAG 검색용 hybrid retriever입니다.
+
+        평가 결과가 가장 좋았던 80:20 비율을 기본값으로 사용합니다.
+        실제 LLM 주입은 top1 중심으로 하되, 내부 후보는 넓게 가져와 BM25가 재정렬할 여지를 둡니다.
+        """
+        vector_scores = self._fetch_vector_scores(query_vector, top_k=candidate_top_k)
+        bm25_scores = self._get_bm25_ranker().get_scores(query_text)
+        candidate_ids = set(vector_scores) | set(bm25_scores)
+        normalized_vector = self._normalize_scores({
+            section_id: vector_scores.get(section_id, 0.0)
+            for section_id in candidate_ids
+        })
+        normalized_bm25 = self._normalize_scores({
+            section_id: bm25_scores.get(section_id, 0.0)
+            for section_id in candidate_ids
+        })
+
+        ranked_candidates = []
+        for section_id in candidate_ids:
+            final_score = (
+                vector_weight * normalized_vector.get(section_id, 0.0)
+                + bm25_weight * normalized_bm25.get(section_id, 0.0)
+            )
+            ranked_candidates.append({
+                "section_id": section_id,
+                "score": final_score,
+                "vector_score": vector_scores.get(section_id, 0.0),
+                "bm25_score": bm25_scores.get(section_id, 0.0),
+            })
+
+        ranked_candidates.sort(key=lambda item: item["score"], reverse=True)
+        return self._fetch_concepts_with_questions_by_ids(ranked_candidates[:top_k])
+
+    def _fetch_concepts_with_questions_by_vector(self, query_vector: list, top_k: int):
         # Cypher: Concept을 먼저 찾고, 연결된 Question들을 1:N으로 묶어서 가져옴
         query = """
         CALL db.index.vector.queryNodes('concept_index', $top_k, $vector) 
@@ -47,6 +118,87 @@ class GraphRetriever:
         }
         
         return self.graph.query(query, params)
+
+    def _fetch_vector_scores(self, query_vector: list, top_k: int) -> dict[str, float]:
+        rows = self.graph.query(
+            """
+            CALL db.index.vector.queryNodes('concept_index', $top_k, $vector)
+            YIELD node AS c, score
+            RETURN c.section_id AS section_id, score
+            """,
+            {"top_k": top_k, "vector": query_vector},
+        )
+        return {
+            str(row["section_id"]): float(row["score"])
+            for row in rows
+            if row["section_id"] is not None and row["score"] >= 0
+        }
+
+    def _fetch_concepts_with_questions_by_ids(self, ranked_candidates: list[dict]):
+        if not ranked_candidates:
+            return []
+
+        query = """
+        UNWIND $candidates AS candidate
+        MATCH (c:Concept {section_id: candidate.section_id})
+        OPTIONAL MATCH (q:Question)-[:VERIFIED_MENTIONS]->(c)
+        WITH candidate, c, q
+        ORDER BY q.problem_id
+
+        WITH candidate, c, collect({
+            id: q.problem_id,
+            question: q.question,
+            answer: q.answer,
+            images: coalesce(q.images, [])
+        }) AS related_questions
+
+        RETURN
+            c.section_id AS section_id,
+            c.title AS title,
+            c.document AS content,
+            c.importance AS importance,
+            c.practical_dates AS practical_dates,
+            candidate.score AS score,
+            candidate.vector_score AS vector_score,
+            candidate.bm25_score AS bm25_score,
+            related_questions
+        ORDER BY candidate.score DESC
+        """
+        return self.graph.query(query, {"candidates": ranked_candidates})
+
+    def _get_bm25_ranker(self):
+        # Concept 문서는 앱 실행 중 자주 바뀌지 않으므로 최초 검색 시 한 번만 BM25 인덱스를 만듭니다.
+        if self._bm25_ranker is None:
+            self._bm25_ranker = BM25ConceptRanker(self._fetch_concepts_for_bm25())
+        return self._bm25_ranker
+
+    def _fetch_concepts_for_bm25(self):
+        return self.graph.query(
+            """
+            MATCH (c:Concept)
+            OPTIONAL MATCH (c)-[:BELONGS_TO]->(ch:Chapter)
+            RETURN
+                c.section_id AS section_id,
+                c.title AS title,
+                c.document AS document,
+                c.practical_dates AS practical_dates,
+                ch.name AS chapter
+            """
+        )
+
+    def _normalize_scores(self, scores: dict[str, float]) -> dict[str, float]:
+        if not scores:
+            return {}
+
+        min_score = min(scores.values())
+        max_score = max(scores.values())
+        if max_score == min_score:
+            return {key: 1.0 if value > 0 else 0.0 for key, value in scores.items()}
+
+        return {
+            key: (value - min_score) / (max_score - min_score)
+            for key, value in scores.items()
+        }
 
     def format_context_for_llm(
         self,
