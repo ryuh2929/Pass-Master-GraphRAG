@@ -922,34 +922,83 @@ reranker는 무조건 성능을 올려주는 부품이 아니다. 후보 생성 
 
 ---
 
-## 14. 질문 검색 평가 로직과 실제 runtime 검색 로직이 달라짐
+## 14. 질문 검색에서 vector-only 검색이 단원명과 키워드 매칭을 놓침
 
 ### 문제 상황
 
-사용자 질문을 Concept로 검색하는 단계에서도 BM25를 적용하기 위해 `query_retrieval` 평가셋을 만들고 여러 전략을 비교했다.
+사용자 질문을 Concept로 검색할 때 기존에는 TEI 임베딩 기반 vector 검색만 사용했다.
 
-평가에서는 `hybrid_80_20`이 가장 좋은 결과를 보였다.
+의미적으로 가까운 단원을 찾는 데는 효과가 있었지만, 다음과 같이 단원명이나 핵심 키워드가 중요한 질문에서는 1등 후보가 흔들릴 수 있었다.
 
-```text
-vector_only   Top1 88.57%, Top3 97.14%, MRR 0.936
-hybrid_80_20  Top1 94.29%, Top3 100.00%, MRR 0.967
-```
+- `화이트박스 테스트의 검증 기준`
+- `Boundary Value Analysis`
+- `EQUI JOIN`
+- `Python range`
+- `System.out.print`
 
-그런데 평가 스크립트의 자체 hybrid 계산 결과와 실제 `GraphRetriever`를 호출한 runtime 결과가 처음에는 완전히 일치하지 않았다.
+특히 실제 답변에서는 top1 Concept의 연결 기출 문제만 가져오기 때문에, 검색 top1이 틀리면 기출 문제까지 잘못 출력될 수 있다.
 
 ### 원인
 
-평가 스크립트와 runtime 코드가 각각 hybrid 점수를 계산하고 있었다.
+임베딩 검색은 문장 전체 의미를 기준으로 유사도를 계산한다.
 
-평가 스크립트는 vector 점수와 BM25 점수를 각각 자기 점수 분포 안에서 정규화했다.
+따라서 “무슨 뜻인지”가 비슷한 단원을 찾는 데는 강하지만, 다음 신호를 항상 1등으로 끌어올리지는 못한다.
 
-반면 runtime 코드는 vector/BM25 후보 union에 없는 점수를 `0`으로 채운 뒤 정규화했다.
+- 단원명과 거의 일치하는 키워드
+- 영문 병기 또는 약어
+- 코드/SQL 식별자
+- `정의`, `종류`, `검증 기준`, `도구` 같은 검색 의도 구분
 
-이 작은 차이 때문에 같은 `vector 0.8 + BM25 0.2` 비율을 사용해도 후보 순위가 달라질 수 있었다.
+반대로 BM25는 단어 일치에는 강하지만, 의미적으로 풀어 쓴 질문에는 약하다.
+
+따라서 질문 검색에는 vector와 BM25 중 하나만 쓰기보다, vector를 주력으로 두고 BM25를 보조 점수로 섞는 방식이 적합했다.
 
 ### 해결 방법
 
-평가 스크립트에 실제 운영 코드 호출 전략을 추가했다.
+질문 검색 평가셋을 만들고 vector-only, BM25-only, hybrid 비율을 비교했다.
+
+수정 파일: `src/evaluation/evaluate_query_retrieval.py`
+
+```text
+vector_only
+bm25_only
+hybrid_80_20
+hybrid_60_40
+hybrid_40_60
+```
+
+평가 결과 `vector 0.8 + BM25 0.2`가 가장 안정적이었다.
+
+```text
+vector_only   Top1 88.57%, Top3 97.14%, MRR 0.936
+bm25_only     Top1 94.29%, Top3 97.14%, MRR 0.960
+hybrid_80_20  Top1 94.29%, Top3 100.00%, MRR 0.967
+```
+
+이 결과를 runtime 검색에 적용했다.
+
+수정 파일: `src/retrieval/graph.py`
+
+```python
+final_score = (
+    vector_weight * normalized_vector.get(section_id, 0.0)
+    + bm25_weight * normalized_bm25.get(section_id, 0.0)
+)
+```
+
+최종 검색 흐름은 다음과 같다.
+
+```text
+정제된 검색어
+-> TEI embedding
+-> vector 후보 top100 조회
+-> 같은 검색어로 BM25 점수 계산
+-> vector_norm 0.8 + bm25_norm 0.2
+-> 최종 top1 Concept 조회
+-> top1 Concept 요약 + top1 연결 기출 3개 LLM 주입
+```
+
+평가 수치가 실제 앱 코드에도 그대로 적용되는지 확인하기 위해 `current_runtime` 전략도 추가했다.
 
 수정 파일: `src/evaluation/evaluate_query_retrieval.py`
 
@@ -963,42 +1012,9 @@ strategies["current_runtime"] = build_runtime_candidates(
 )
 ```
 
-`current_runtime`은 자체 계산이 아니라 실제 `GraphRetriever.search_concepts_with_questions()`를 호출한다.
-
-수정 파일: `src/retrieval/graph.py`
-
-```python
-normalized_vector = self._normalize_scores(vector_scores)
-normalized_bm25 = self._normalize_scores(bm25_scores)
-```
-
-점수 정규화도 평가 스크립트와 동일하게, vector와 BM25를 각각 자기 점수군 안에서 먼저 정규화하도록 맞췄다.
-
-최종 runtime 검색은 다음 구조로 정리했다.
-
-```text
-정제된 검색어
--> TEI embedding
--> vector 후보 top100 조회
--> 같은 검색어로 BM25 점수 계산
--> vector_norm 0.8 + bm25_norm 0.2
--> 최종 top1 Concept 조회
--> top1 Concept 요약 + top1 연결 기출 3개 LLM 주입
-```
-
 ### 개선 효과
 
-평가용 `hybrid_80_20`과 실제 runtime 검색 결과가 일치하게 되었다.
-
-```text
-hybrid_80_20
-Top1 94.29%, Top3 100.00%, Top5 100.00%, MRR 0.967
-
-current_runtime
-Top1 94.29%, Top3 100.00%, Top5 100.00%, MRR 0.967
-```
-
-검색 품질도 vector-only 대비 개선되었다.
+질문 검색 품질이 vector-only 대비 개선되었다.
 
 ```text
 Top1: 88.57% -> 94.29%
@@ -1006,6 +1022,13 @@ Top3: 97.14% -> 100.00%
 MRR : 0.936 -> 0.967
 ```
 
+실제 runtime 전략도 같은 수치로 검증되었다.
+
+```text
+current_runtime
+Top1 94.29%, Top3 100.00%, Top5 100.00%, MRR 0.967
+```
+
 ### 정리
 
-평가 스크립트가 자체 로직만 사용하면 실제 앱에서 쓰는 검색 품질을 보장할 수 없다. 실험용 전략과 실제 runtime 전략을 함께 평가해야, “성능이 좋아졌다”는 수치가 실제 서비스 코드에도 적용되는지 확인할 수 있다.
+질문 검색에서는 vector-only가 항상 최선이 아니다. 의미 유사도는 vector가 담당하고, 단원명/영문 병기/코드 키워드 매칭은 BM25가 보완하도록 hybrid 점수를 적용하면 검색 top1과 top3 품질을 함께 높일 수 있다.

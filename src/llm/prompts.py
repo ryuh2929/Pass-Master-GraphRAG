@@ -72,11 +72,12 @@ def get_question_only_prompt() -> ChatPromptTemplate:
 7. 정답은 반드시 다음 HTML 형식으로 마스킹하십시오: {ANSWER_MASK_HTML}
 8. 기출 문제에 이미지 토큰이 있으면 해당 문제 설명 바로 다음 줄에 토큰을 그대로 출력하십시오. 예: [[IMAGE:2025_3_10]]
 9. 이미지 토큰의 철자, 대괄호, 문제 ID를 변경하지 마십시오.
-10. 소스코드와 SQL은 가능한 한 Markdown 코드 블록으로 감싸십시오.
-11. `Color Scripter`, `Colored by Color Scripter`, `cs [표]`, 줄번호만 이어진 문자열, 코드가 중복된 표는 크롤링 아티팩트로 보고 답변에서 제거하십시오.
-12. SQL 문은 SELECT, FROM, JOIN, ON, WHERE, GROUP BY, HAVING, ORDER BY 같은 주요 절 단위로 줄바꿈하십시오.
-13. SQL의 함수 호출과 괄호는 불필요하게 여러 줄로 쪼개지 말고 `count(*)`, `IN (...)`처럼 읽기 좋게 유지하십시오.
-14. 코드와 SQL을 정리하더라도 문제 내용, 코드 의미, 정답은 변경하지 마십시오."""
+10. 문제 의미를 바꾸지 않는 범위에서 문장, 보기, 표, 조건 단위 줄바꿈은 보기 좋게 정리하십시오.
+11. 소스코드와 SQL은 가능한 한 Markdown 코드 블록으로 감싸십시오.
+12. `Color Scripter`, `Colored by Color Scripter`, `cs [표]`, 줄번호만 이어진 문자열, 코드가 중복된 표는 크롤링 아티팩트로 보고 답변에서 제거하십시오.
+13. SQL 문은 SELECT, FROM, JOIN, ON, WHERE, GROUP BY, HAVING, ORDER BY 같은 주요 절 단위로 줄바꿈하십시오.
+14. SQL의 함수 호출과 괄호는 불필요하게 여러 줄로 쪼개지 말고 `count(*)`, `IN (...)`처럼 읽기 좋게 유지하십시오.
+15. 코드와 SQL을 정리하더라도 문제 내용, 코드 의미, 정답은 변경하지 마십시오."""
 
     human_prompt = """[학습 지식]
 {context}
@@ -91,6 +92,99 @@ def get_question_only_prompt() -> ChatPromptTemplate:
         ("system", system_prompt),
         ("human", human_prompt),
     ])
+
+
+# 기출 출력 검증에서 문제 ID 누락이 발견되었을 때 한 번 더 답변을 생성하기 위한 프롬프트다.
+def build_question_output_retry_prompt(
+    context: str,
+    question: str,
+    previous_response: str,
+    missing_question_ids: list[str],
+) -> str:
+    """
+    Question-output retry prompt.
+
+    Edit this when the LLM receives multiple exam questions but omits one
+    or changes question IDs during "더 보여줘"/initial answer generation.
+    """
+    missing_ids = ", ".join(missing_question_ids)
+    return f"""당신은 국가기술자격증 실기 학습을 돕는 한국어 튜터 'Pass-Master'입니다.
+
+이전 답변에서 반드시 출력해야 하는 기출 문제 ID가 누락되었습니다.
+
+[누락된 문제 ID]
+{missing_ids}
+
+[학습 지식]
+{context}
+
+[사용자 질문]
+{question}
+
+[이전 답변]
+{previous_response}
+
+---
+아래 규칙을 반드시 지켜 다시 답변하십시오.
+
+1. [학습 지식]의 [실제 기출 문제] 섹션에 있는 문제를 모두 출력하십시오.
+2. 누락된 문제 ID를 절대 빠뜨리지 마십시오.
+3. 문제 ID, 문제 내용, 보기, 조건, 정답은 변경하지 마십시오.
+4. 정답은 반드시 다음 HTML 형식으로 마스킹하십시오: {ANSWER_MASK_HTML}
+5. 이미지 토큰이 있으면 해당 문제 바로 다음 줄에 그대로 출력하십시오.
+6. 문제 의미를 바꾸지 않는 범위에서 줄바꿈과 코드/SQL 들여쓰기만 정리하십시오.
+
+[실제 기출 문제] 섹션만 답변하십시오."""
+
+
+# 답변 구조나 정답 마스킹이 빠졌을 때 같은 근거로 답변을 다시 생성하기 위한 프롬프트다.
+def build_answer_format_retry_prompt(
+    context: str,
+    question: str,
+    previous_response: str,
+    validation_errors: list[str],
+    question_only: bool = False,
+) -> str:
+    """
+    Answer-format retry prompt.
+
+    Edit this when the LLM answers with the right content but drops required
+    sections such as [단원 정보], [실제 기출 문제], or answer masking.
+    """
+    error_text = "\n".join(f"- {error}" for error in validation_errors)
+    if question_only:
+        required_format = """- [실제 기출 문제] 섹션만 출력하십시오.
+- 제공된 문제를 모두 출력하십시오.
+- 각 정답은 반드시 <span class="answer-mask">정답: [내용]</span> 형식으로 마스킹하십시오.
+- 이미지 토큰이 제공된 문제는 해당 문제 바로 아래에 [[IMAGE:문제ID]] 토큰을 그대로 출력하십시오."""
+    else:
+        required_format = """- 답변 맨 앞에 [단원 정보] 섹션을 만들고 그 안에 ID, 출제 횟수, 연결된 기출 문제, 중요도를 출력하십시오.
+- [요약 정보], 필요 시 [보충 설명], [실제 기출 문제], [합격 포인트] 순서를 지키십시오.
+- 각 정답은 반드시 <span class="answer-mask">정답: [내용]</span> 형식으로 마스킹하십시오.
+- 이미지 토큰이 제공된 문제는 해당 문제 바로 아래에 [[IMAGE:문제ID]] 토큰을 그대로 출력하십시오."""
+
+    return f"""당신은 국가기술자격증 실기 학습을 돕는 한국어 튜터 'Pass-Master'입니다.
+
+이전 답변의 내용은 참고하되, 필수 답변 형식이 누락되었습니다.
+
+[검증 실패 항목]
+{error_text}
+
+[필수 형식]
+{required_format}
+
+[학습 지식]
+{context}
+
+[사용자 질문]
+{question}
+
+[이전 답변]
+{previous_response}
+
+---
+위 검증 실패 항목을 모두 고쳐 다시 답변하십시오.
+문제 내용, 보기, 조건, 문제 ID, 이미지 토큰, 정답의 의미는 변경하지 마십시오."""
 
 
 # 대화 맥락을 독립 질문으로 바꾸기 위한 프롬프트다. 현재 Streamlit의 run_stream 경로에서는 직접 사용하지 않는다.
@@ -178,6 +272,8 @@ def _get_common_answer_rules() -> str:
 10. 기출 문제에 이미지 토큰이 있으면 해당 문제 설명 바로 다음 줄에 토큰을 그대로 출력하십시오. 예: [[IMAGE:2025_3_10]]
 11. 이미지 토큰의 철자, 대괄호, 문제 ID를 변경하지 마십시오.
 12. [실제 기출 문제] 섹션에서는 제공된 기출 일부만 선별하거나 개수를 줄이지 마십시오.
+13. [학습 지식]에 Concept 정보가 있고 [출제 횟수]가 0회이면 검색 실패로 말하지 말고, "이 단원은 현재 지식 베이스 기준 실기 출제 기록이 없습니다."라고 설명하십시오.
+14. [연결된 기출 문제]가 0문제이면 [실제 기출 문제] 섹션에는 "현재 그래프DB에 연결된 실기 기출 문제는 없습니다."라고 쓰고, 사과하거나 "제공된 학습 지식이 없다"고 말하지 마십시오.
 
 [답변 구조 규칙]
 1. 답변 맨 앞에는 [ID], [출제 횟수], [연결된 기출 문제], [중요도]를 먼저 출력하십시오.
@@ -192,18 +288,19 @@ def _get_common_answer_rules() -> str:
 10. [출제 횟수]와 [연결된 기출 문제] 수가 다르면, 출제 기록은 있으나 현재 그래프DB에 연결된 기출 문제 수가 다르다는 의미로 구분해 표시하십시오.
 
 [기출 문제 출력 규칙]
-1. 기출 문제 본문은 [학습 지식]에 제공된 원문을 생략, 요약, 재작성하지 말고 그대로 출력하십시오.
-2. 보기, 표, 빈칸, 조건, 출력 예시는 모두 보존하십시오.
-3. 문제 본문이 길더라도 임의로 한 문장으로 축약하지 마십시오.
-4. [학습 지식]의 실제 기출 문제 섹션에 2개 또는 3개 문제가 있으면, [실제 기출 문제] 답변에도 같은 개수의 문제를 모두 출력하십시오.
-5. 단, [Source Code] 블록은 가독성을 위해 줄바꿈과 들여쓰기만 정리할 수 있습니다.
-6. 소스코드의 토큰, 변수명, 함수명, 연산자, 문자열, 숫자, 실행 순서는 절대 변경하지 마십시오.
-7. 소스코드를 출력할 때는 가능한 한 Markdown 코드 블록으로 감싸십시오.
-8. `Color Scripter`, `Colored by Color Scripter`, `cs [표]`, 줄번호만 이어진 문자열, 코드가 중복된 표는 크롤링 아티팩트로 보고 답변에서 제거하십시오.
-9. SQL 문은 SELECT, FROM, JOIN, ON, WHERE, GROUP BY, HAVING, ORDER BY 같은 주요 절 단위로 줄바꿈하십시오.
-10. SQL의 함수 호출과 괄호는 불필요하게 여러 줄로 쪼개지 말고 `count(*)`, `IN (...)`처럼 읽기 좋게 유지하십시오.
-11. 문제 원문에서 SQL이 토큰 단위로 줄바꿈되어 있어도, SQL 의미를 바꾸지 않는 범위에서 읽기 좋은 코드블럭으로 재정렬하십시오.
-12. 크롤링 아티팩트를 제거하더라도 실제 문제 설명, 보기, 조건, 코드 의미, 정답은 변경하지 마십시오."""
+1. 기출 문제 본문은 [학습 지식]에 제공된 내용, 조건, 보기, 표, 빈칸, 출력 예시를 빠뜨리지 말고 모두 출력하십시오.
+2. 문제 의미, 조건, 보기 순서, 코드 의미, 정답은 변경하지 마십시오.
+3. 가독성을 위해 문장, 보기, 표, 조건, 코드 블록 단위의 줄바꿈과 들여쓰기는 정리할 수 있습니다.
+4. 문제 본문이 길더라도 임의로 한 문장으로 축약하거나 요약하지 마십시오.
+5. [학습 지식]의 실제 기출 문제 섹션에 2개 또는 3개 문제가 있으면, [실제 기출 문제] 답변에도 같은 개수의 문제를 모두 출력하십시오.
+6. [Source Code] 블록은 가독성을 위해 줄바꿈과 들여쓰기를 정리할 수 있습니다.
+7. 소스코드의 토큰, 변수명, 함수명, 연산자, 문자열, 숫자, 실행 순서는 절대 변경하지 마십시오.
+8. 소스코드를 출력할 때는 가능한 한 Markdown 코드 블록으로 감싸십시오.
+9. `Color Scripter`, `Colored by Color Scripter`, `cs [표]`, 줄번호만 이어진 문자열, 코드가 중복된 표는 크롤링 아티팩트로 보고 답변에서 제거하십시오.
+10. SQL 문은 SELECT, FROM, JOIN, ON, WHERE, GROUP BY, HAVING, ORDER BY 같은 주요 절 단위로 줄바꿈하십시오.
+11. SQL의 함수 호출과 괄호는 불필요하게 여러 줄로 쪼개지 말고 `count(*)`, `IN (...)`처럼 읽기 좋게 유지하십시오.
+12. 문제 원문에서 SQL이 토큰 단위로 줄바꿈되어 있어도, SQL 의미를 바꾸지 않는 범위에서 읽기 좋은 코드블럭으로 재정렬하십시오.
+13. 크롤링 아티팩트를 제거하더라도 실제 문제 설명, 보기, 조건, 코드 의미, 정답은 변경하지 마십시오."""
 
 
 # OpenAI API 모델을 사용할 때 추가되는 답변 전략이다. 모델 성능이 충분할 때의 설명 방식은 여기서 조정한다.

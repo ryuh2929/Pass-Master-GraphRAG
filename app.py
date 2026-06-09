@@ -1,10 +1,12 @@
 from pathlib import Path
 import base64
 import mimetypes
+import os
 import re
 
 import streamlit as st
 from src.llm.rag_chain import PassMasterChain
+from src.llm.rag_graph import PassMasterGraphChain
 
 # 1. 페이지 설정 및 다크모드 최적화 커스텀 CSS
 st.set_page_config(page_title="Pass-Master: 자격증 합격 튜터", layout="wide")
@@ -82,7 +84,12 @@ def render_answer(content: str, images_by_question: dict, image_max_height: int 
 # 2. 체인 인스턴스 초기화 (세션 스테이트 활용하여 1회만 로드)
 if "rag_chain" not in st.session_state:
     with st.spinner("🚀 Pass-Master 엔진 로드 중..."):
-        st.session_state.rag_chain = PassMasterChain()
+        # LangGraph 체인을 기본값으로 사용합니다.
+        # 기존 LangChain 체인으로 되돌려 비교해야 할 때만 USE_LANGGRAPH=false를 지정합니다.
+        if os.getenv("USE_LANGGRAPH", "true").lower() in {"0", "false", "no"}:
+            st.session_state.rag_chain = PassMasterChain()
+        else:
+            st.session_state.rag_chain = PassMasterGraphChain()
         st.session_state.messages = [] # 대화 기록 저장용
 
 # 3. 사이드바 - 대화 관리
