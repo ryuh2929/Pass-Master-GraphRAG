@@ -771,3 +771,241 @@ context += """
 ### 정리
 
 기출 더보기는 LLM에게 전부 맡기지 않는다. 요청 라우팅, offset, 표시 범위는 코드가 관리하고, 현재 표시 범위의 문제 출력 품질은 LLM이 검수한다.
+
+---
+
+## 12. Question-Concept 자동 연결에서 코드형 문제가 엉뚱한 단원으로 연결됨
+
+### 문제 상황
+
+기출 문제를 `Concept` 노드에 자동 연결할 때, 단순 벡터 유사도만 사용하면 코드형 문제가 엉뚱한 프로그래밍 언어 단원으로 연결되는 사례가 있었다.
+
+예를 들어 Java 코드 문제가 C언어 단원으로 연결되거나, SQL 문제 안의 일부 키워드만 보고 인접 SQL 단원으로 잘못 연결되는 식이다.
+
+전체 연결 커버리지는 높아 보여도, 코드형 문제의 언어 대분류나 세부 단원 연결이 틀리면 이후 RAG 답변에서 잘못된 기출 문제가 함께 출력된다.
+
+### 원인
+
+임베딩 모델은 문장 전체의 의미 유사도에는 강하지만, 코드형 문제에서 다음 신호를 안정적으로 구분하기 어렵다.
+
+- `SQL`, `C언어`, `Java`, `Python` 같은 명시 언어명
+- `printf`, `System.out.print`, `range`, `slice` 같은 코드 키워드
+- 문제 출제 날짜와 단원 출제 날짜의 정합성
+- 같은 언어 내부의 세부 단원 차이
+
+또한 문제 본문에 코드가 길게 들어가면 임베딩이 코드 토큰에 끌려, 실제 평가 의도와 다른 단원으로 이동할 수 있다.
+
+### 해결 방법
+
+기출-개념 자동 연결 로직을 vector-only에서 날짜 검증과 키워드 기반 보정을 포함한 hybrid 방식으로 확장했다.
+
+수정 파일: `src/ingestion/hybrid_linker.py`
+
+```python
+def build_hybrid_candidates(
+    *,
+    question_text: str,
+    practical_date: str,
+    vector_scores: dict[str, float],
+    bm25_scores: dict[str, float],
+    ranker: BM25ConceptRanker,
+    vector_weight: float = 0.6,
+    bm25_weight: float = 0.4,
+    explicit_language_vector_weight: float = 1.0,
+    explicit_language_bm25_weight: float = 0.0,
+    code_vector_weight: float = 0.3,
+    code_bm25_weight: float = 0.7,
+) -> list[HybridCandidate]:
+```
+
+핵심 보정은 다음과 같다.
+
+- Question의 실기 출제 날짜와 Concept의 `practical_dates`가 맞지 않으면 후보에서 제거
+- 문제에 언어명이 명시되면 해당 언어 Concept 범위 안에서만 후보 선택
+- 언어명이 없지만 코드/SQL 힌트가 있으면 BM25 가중치를 높여 표면 키워드 반영
+- `System.out.printf()`가 C의 `printf()`로 오인되지 않도록 정규식 보정
+- Concept 계열 판별은 본문 전체가 아니라 제목/챕터 중심으로 수행
+
+평가셋도 별도로 만들었다.
+
+수정 파일:
+
+- `data/evaluation/question_concept_gold.seed.json`
+- `data/evaluation/question_language_gold.seed.json`
+- `src/evaluation/evaluate_concept_linking.py`
+- `src/evaluation/evaluate_language_linking.py`
+- `src/evaluation/compare_linking_strategies.py`
+
+### 개선 효과
+
+자동 연결 커버리지는 다음과 같이 개선되었다.
+
+```text
+364/380 (95.8%) -> 376/380 (98.95%)
+```
+
+코드형 문제 평가셋에서는 언어 대분류 오연결을 제거했다.
+
+```text
+언어 대분류 정확도: 85.21% -> 100.00%
+코드/SQL 세부 단원 연결 정확도: 53.52% -> 64.79%
+```
+
+세부 단원 정확도는 아직 완전하지 않지만, 사용자가 체감하기 쉬운 “Java 문제인데 C 단원이 나오는” 수준의 대분류 오연결을 먼저 줄였다.
+
+### 정리
+
+기출-개념 자동 연결은 임베딩 점수 하나로 끝내기 어렵다. 날짜 정합성, 명시 언어 후보군 제한, BM25 키워드 보정을 함께 사용해야 GraphRAG의 엣지 품질을 안정적으로 높일 수 있다.
+
+---
+
+## 13. Reranker를 도입했지만 코드 문제 연결 정확도가 하락함
+
+### 문제 상황
+
+`bge-reranker-base` 모델을 별도 TEI reranker 컨테이너로 띄우고, vector/BM25로 만든 후보를 다시 재정렬하는 실험을 했다.
+
+하지만 실제 평가 결과, reranker를 적용했을 때 코드/SQL 문제 연결 정확도가 오히려 떨어졌다.
+
+코드에는 reranker 관련 클래스와 Docker profile이 남아 있지만, 기본 실행에서는 사용하지 않는 상태가 되었다.
+
+### 원인
+
+reranker는 후보 생성기가 아니라 후보 재정렬기이다.
+
+즉, 정답 Concept가 후보군 안에 없으면 reranker가 정답을 새로 만들어낼 수 없다.
+
+또한 `bge-reranker-base`는 문장 쌍 의미 관련도 재정렬에는 유용하지만, 이 프로젝트의 코드형 문제처럼 다음 기준을 함께 만족해야 하는 경우에는 기대만큼 강하지 않았다.
+
+- 기출 날짜 일치
+- 언어 대분류 일치
+- 같은 언어 내부 세부 단원 구분
+- 코드 키워드와 문제 의도 구분
+
+추가로 reranker 컨테이너는 RAM/VRAM 사용량도 늘린다. 로컬 LLM, TEI 임베딩, Neo4j를 함께 사용하는 환경에서는 상시 실행 비용이 크다.
+
+### 해결 방법
+
+reranker 코드는 실험 가능한 옵션으로 남기되, 기본값은 비활성화했다.
+
+수정 파일: `src/ingestion/loader.py`
+
+```python
+def _create_reranker(self):
+    if os.getenv("USE_RERANKER", "false").lower() not in {"1", "true", "yes"}:
+        print("Reranker disabled. Set USE_RERANKER=true to enable.")
+        return None
+```
+
+Docker에서도 reranker는 별도 profile로 분리해 필요할 때만 켜도록 했다.
+
+수정 파일: `docker-compose.yml`
+
+```yaml
+tei-reranker:
+  profiles: ["reranker"]
+```
+
+그리고 링크 재생성 과정에서 reranker timeout 같은 실패가 발생해도 기존 관계가 먼저 삭제되지 않도록, 새 링크를 모두 준비한 뒤 마지막에 `VERIFIED_MENTIONS`를 교체하는 방식으로 바꿨다.
+
+### 개선 효과
+
+reranker를 “항상 쓰는 성능 개선 장치”가 아니라 “실험 가능한 재정렬 옵션”으로 분리했다.
+
+기본 연결 품질은 검증된 hybrid/date/language 제한 로직으로 유지하고, reranker로 인한 메모리 사용량 증가와 정확도 하락을 피할 수 있다.
+
+또한 실패 시 기존 `VERIFIED_MENTIONS`가 먼저 삭제되어 평가 결과가 전부 missing으로 나오는 위험을 줄였다.
+
+### 정리
+
+reranker는 무조건 성능을 올려주는 부품이 아니다. 후보 생성 품질이 충분하고 평가셋에서 개선이 확인될 때만 기본 경로에 넣어야 한다. 이 프로젝트에서는 실험 결과가 좋지 않았기 때문에 옵션으로 남기고 기본값에서는 제외했다.
+
+---
+
+## 14. 질문 검색 평가 로직과 실제 runtime 검색 로직이 달라짐
+
+### 문제 상황
+
+사용자 질문을 Concept로 검색하는 단계에서도 BM25를 적용하기 위해 `query_retrieval` 평가셋을 만들고 여러 전략을 비교했다.
+
+평가에서는 `hybrid_80_20`이 가장 좋은 결과를 보였다.
+
+```text
+vector_only   Top1 88.57%, Top3 97.14%, MRR 0.936
+hybrid_80_20  Top1 94.29%, Top3 100.00%, MRR 0.967
+```
+
+그런데 평가 스크립트의 자체 hybrid 계산 결과와 실제 `GraphRetriever`를 호출한 runtime 결과가 처음에는 완전히 일치하지 않았다.
+
+### 원인
+
+평가 스크립트와 runtime 코드가 각각 hybrid 점수를 계산하고 있었다.
+
+평가 스크립트는 vector 점수와 BM25 점수를 각각 자기 점수 분포 안에서 정규화했다.
+
+반면 runtime 코드는 vector/BM25 후보 union에 없는 점수를 `0`으로 채운 뒤 정규화했다.
+
+이 작은 차이 때문에 같은 `vector 0.8 + BM25 0.2` 비율을 사용해도 후보 순위가 달라질 수 있었다.
+
+### 해결 방법
+
+평가 스크립트에 실제 운영 코드 호출 전략을 추가했다.
+
+수정 파일: `src/evaluation/evaluate_query_retrieval.py`
+
+```python
+strategies["current_runtime"] = build_runtime_candidates(
+    retriever=retriever,
+    query_vector=query_vector,
+    query_text=case.query,
+    top_k=final_top_k,
+    candidate_top_k=vector_top_k,
+)
+```
+
+`current_runtime`은 자체 계산이 아니라 실제 `GraphRetriever.search_concepts_with_questions()`를 호출한다.
+
+수정 파일: `src/retrieval/graph.py`
+
+```python
+normalized_vector = self._normalize_scores(vector_scores)
+normalized_bm25 = self._normalize_scores(bm25_scores)
+```
+
+점수 정규화도 평가 스크립트와 동일하게, vector와 BM25를 각각 자기 점수군 안에서 먼저 정규화하도록 맞췄다.
+
+최종 runtime 검색은 다음 구조로 정리했다.
+
+```text
+정제된 검색어
+-> TEI embedding
+-> vector 후보 top100 조회
+-> 같은 검색어로 BM25 점수 계산
+-> vector_norm 0.8 + bm25_norm 0.2
+-> 최종 top1 Concept 조회
+-> top1 Concept 요약 + top1 연결 기출 3개 LLM 주입
+```
+
+### 개선 효과
+
+평가용 `hybrid_80_20`과 실제 runtime 검색 결과가 일치하게 되었다.
+
+```text
+hybrid_80_20
+Top1 94.29%, Top3 100.00%, Top5 100.00%, MRR 0.967
+
+current_runtime
+Top1 94.29%, Top3 100.00%, Top5 100.00%, MRR 0.967
+```
+
+검색 품질도 vector-only 대비 개선되었다.
+
+```text
+Top1: 88.57% -> 94.29%
+Top3: 97.14% -> 100.00%
+MRR : 0.936 -> 0.967
+```
+
+### 정리
+
+평가 스크립트가 자체 로직만 사용하면 실제 앱에서 쓰는 검색 품질을 보장할 수 없다. 실험용 전략과 실제 runtime 전략을 함께 평가해야, “성능이 좋아졌다”는 수치가 실제 서비스 코드에도 적용되는지 확인할 수 있다.
