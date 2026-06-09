@@ -361,6 +361,22 @@ jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe \
     --hash=sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d
     # via jsonschema
+kiwipiepy==0.23.1 \
+    --hash=sha256:28964cd73f50be09137ab09d48b4c6c5d42c7f23b6bdbe6e4afdb1057c4e0e76 \
+    --hash=sha256:3d8467f9f4e79f130af79ae74fb7cd38316c2443a345c90b5c1fd68d719dc207 \
+    --hash=sha256:61ddc5bcd5ca728d85039e0c3b83ae5d6b4999188b7e170fa5ddb1adb0dce221 \
+    --hash=sha256:6800e64eefe09c9f00c08802a2facba7a84b6f2d8d32d3f5c811a29b451753d0 \
+    --hash=sha256:6f8afa82ed41eed61fa1f443cd92dc08a08476159e583b3e3f96119bf10decc9 \
+    --hash=sha256:91f066cbb3edcfcb773eb3f2007d397908756ce584a37a452830ad466863a458 \
+    --hash=sha256:bfd652e20874df476d5a1c890a6f7f0f4d9cbff4f7135cd80fb814c2cf4c0144 \
+    --hash=sha256:d9925c1a6e25b8fcadb064f70f72f4d809b6e88d1d09977b7dd5a7cf05169788 \
+    --hash=sha256:d9c088627153475b4192836ccada3f2684e6dd9e52d8c131b76defe946c2d159 \
+    --hash=sha256:de9e85442848038914b0a77b995c1b21131b1ac7ffba461e4fb6549e292be278 \
+    --hash=sha256:ead54b784fd2f08a559c03abf238e0046380b5dc5cda28b4020d6e73161fb58e
+    # via pass-master-graphrag
+kiwipiepy-model==0.23.0 \
+    --hash=sha256:498a22f5585e6c4a162423d7557eb3ee3f71cddc6e0aeb2650c50467e85933e2
+    # via kiwipiepy
 langchain==1.2.15 \
     --hash=sha256:1717b6719daefae90b2728314a5e2a117ff916291e2862595b6c3d6fba33d652 \
     --hash=sha256:e349db349cb3e9550c4044077cf90a1717691756cc236438404b23500e615874
@@ -411,6 +427,7 @@ langgraph==1.1.6 \
     # via
     #   langchain
     #   langchain-neo4j
+    #   pass-master-graphrag
 langgraph-checkpoint==4.0.1 \
     --hash=sha256:b433123735df11ade28829e40ce25b9be614930cd50245ff2af60629234befd9 \
     --hash=sha256:e3adcd7a0e0166f3b48b8cf508ce0ea366e7420b5a73aa81289888727769b034
@@ -585,10 +602,12 @@ numpy==2.4.4 \
     --hash=sha256:e892aff75639bbef0d2a2cfd55535510df26ff92f63c92cd84ef8d4ba5a5557f \
     --hash=sha256:f169b9a863d34f5d11b8698ead99febeaa17a13ca044961aa8e2662a6c7766a0
     # via
+    #   kiwipiepy
     #   langchain-community
     #   neo4j-graphrag
     #   pandas
     #   pydeck
+    #   rank-bm25
     #   scipy
     #   streamlit
 ollama==0.6.1 \
@@ -887,6 +906,10 @@ pyyaml==6.0.3 \
     #   langchain-community
     #   langchain-core
     #   neo4j-graphrag
+rank-bm25==0.2.2 \
+    --hash=sha256:096ccef76f8188563419aaf384a02f0ea459503fdf77901378d4fd9d87e5e51d \
+    --hash=sha256:7bd4a95571adadfc271746fa146a4bcfd89c0cf731e49c3d1ad863290adbe8ae
+    # via pass-master-graphrag
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \
     --hash=sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8
@@ -1083,7 +1106,9 @@ tornado==6.5.5 \
 tqdm==4.67.3 \
     --hash=sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb \
     --hash=sha256:ee1e4c0e59148062281c49d80b25b67771a127c85fc9676d3be5f243206826bf
-    # via openai
+    # via
+    #   kiwipiepy
+    #   openai
 types-pyyaml==6.0.12.20260408 \
     --hash=sha256:92a73f2b8d7f39ef392a38131f76b970f8c66e4c42b3125ae872b7c93b556307 \
     --hash=sha256:fbc42037d12159d9c801ebfcc79ebd28335a7c13b08a4cfbc6916df78fee9384
