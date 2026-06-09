@@ -48,24 +48,24 @@ services:
     restart: unless-stopped
 
   tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
-    # GPU가 TEI 이미지가 요구하는 CUDA 버전 사용이 불가능한 스펙인 경우 CPU를 통해서 실행
-    # image: ghcr.io/huggingface/text-embeddings-inference:latest
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    # GPU가 TEI 이미지가 요구하는 CUDA 버전 사용이 불가능한 스펙인 경우 CPU를 통해서 실행, 아래 주석을 활성화하고 deploy 섹션과 runtime, environment의 NVIDIA 관련 설정 주석 처리
+    # image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    image: ghcr.io/huggingface/text-embeddings-inference:latest
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     container_name: passmaster-tei
     ports:
       - "8080:80"
     volumes:
       - tei_data:/data
-    # runtime: nvidia
-    # environment:
-    #   - NVIDIA_VISIBLE_DEVICES=all
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
     command: ["--model-id", "BAAI/bge-m3", "--port", "80"]
     # shm_size: '2gb' # GPU 가속 시 공유 메모리 확장이 안정성에 도움됨
     restart: unless-stopped
