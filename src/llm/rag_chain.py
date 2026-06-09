@@ -154,33 +154,6 @@ class PassMasterChain:
         
         print(f"🔎 [Decision] 키워드는 있으나 검색 필요 판단: {user_query}")
         return self._execute_vector_search(user_query, recent_history)
-
-    # def _get_session_history(self, session_id: str):
-    #     # RunnableWithMessageHistory와 쓰려면 객체 구조를 맞춰야 함
-    #     if session_id not in self.history_store:
-    #         self.history_store[session_id] = ConversationTokenBufferMemory(
-    #             llm=self.llm, 
-    #             max_token_limit=self.max_token_limit,
-    #             return_messages=True
-    #         )
-    #     return self.history_store[session_id]
-
-    # def _condense_question(self, query, history):
-    #     """
-    #     TokenBufferMemory를 쓰면 history 자체가 이미 '최적화된 최근 대화'입니다.
-    #     따라서 여기서 별도로 history[-3:] 처럼 슬라이싱 할 필요가 없어집니다.
-    #     """
-    #     condense_prompt = f"""
-    #     [최적화된 이전 대화 기록]
-    #     {history}
-        
-    #     [사용자 현재 질문]
-    #     {query}
-        
-    #     위 내용을 바탕으로 검색을 위한 한국어 핵심 키워드 한 문장만 생성해줘.
-    #     """
-    #     response = self.llm.invoke(condense_prompt)
-    #     return response.content if hasattr(response, 'content') else str(response)
     
     def run(self, user_query: str, session_id: str = "default_user"):
         try:

@@ -71,6 +71,7 @@ services:
     restart: unless-stopped
 
   tei-reranker:
+  # reranker 테스트 결과 결과값이 안좋아서 사용안함
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
     profiles: ["reranker"]  # 'reranker' 프로필 지정
     container_name: passmaster-tei-reranker
