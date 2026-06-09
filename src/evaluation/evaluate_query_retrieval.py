@@ -22,6 +22,7 @@ from langchain_neo4j import Neo4jGraph
 
 from src.ingestion.hybrid_linker import BM25ConceptRanker
 from src.retrieval.embedder import TEIEmbedder
+from src.retrieval.graph import GraphRetriever
 
 
 DEFAULT_GOLD_PATH = Path("data/evaluation/query_retrieval_gold.seed.json")
@@ -30,6 +31,12 @@ DEFAULT_WEIGHTS = {
     "hybrid_60_40": (0.6, 0.4),
     "hybrid_40_60": (0.4, 0.6),
 }
+STRATEGY_ORDER = [
+    "vector_only",
+    "bm25_only",
+    *DEFAULT_WEIGHTS.keys(),
+    "current_runtime",
+]
 
 
 @dataclass
@@ -104,8 +111,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--details-strategy",
-        default="hybrid_80_20",
-        choices=["vector_only", "bm25_only", *DEFAULT_WEIGHTS.keys()],
+        default="current_runtime",
+        choices=STRATEGY_ORDER,
         help="--show-details로 상세 출력할 전략입니다.",
     )
     return parser.parse_args()
@@ -114,6 +121,15 @@ def parse_args() -> argparse.Namespace:
 def create_graph() -> Neo4jGraph:
     load_dotenv()
     return Neo4jGraph(
+        url=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+        username=os.getenv("NEO4J_USER", "neo4j"),
+        password=os.getenv("NEO4J_PASSWORD", "password"),
+    )
+
+
+def create_retriever() -> GraphRetriever:
+    load_dotenv()
+    return GraphRetriever(
         url=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
         username=os.getenv("NEO4J_USER", "neo4j"),
         password=os.getenv("NEO4J_PASSWORD", "password"),
@@ -182,6 +198,7 @@ def fetch_vector_scores(
 def evaluate_cases(
     *,
     graph: Neo4jGraph,
+    retriever: GraphRetriever,
     embedder: TEIEmbedder,
     ranker: BM25ConceptRanker,
     cases: list[GoldCase],
@@ -192,6 +209,9 @@ def evaluate_cases(
 
     for index, case in enumerate(cases, start=1):
         query_vector = embedder.get_embedding(case.query)
+
+        # 아래 전략들은 검색 알고리즘을 비교하기 위한 실험용 구현입니다.
+        # 실제 앱에서 호출되는 함수가 아니라, 같은 후보/점수로 여러 가중치를 빠르게 비교합니다.
         vector_scores = fetch_vector_scores(graph, query_vector, top_k=vector_top_k)
         bm25_scores = {
             _normalize_concept_id(section_id): score
@@ -226,6 +246,16 @@ def evaluate_cases(
                 bm25_weight=bm25_weight,
                 top_k=final_top_k,
             )
+
+        # current_runtime은 실제 서비스 코드가 쓰는 GraphRetriever를 그대로 호출합니다.
+        # 실험용 hybrid_80_20과 수치가 다르면 평가 코드와 운영 코드가 어긋난 신호입니다.
+        strategies["current_runtime"] = build_runtime_candidates(
+            retriever=retriever,
+            query_vector=query_vector,
+            query_text=case.query,
+            top_k=final_top_k,
+            candidate_top_k=vector_top_k,
+        )
 
         for strategy, candidates in strategies.items():
             results.append(CaseResult(strategy=strategy, case=case, candidates=candidates))
@@ -272,6 +302,34 @@ def build_ranked_candidates(
     return sorted(candidates, key=lambda candidate: candidate.final_score, reverse=True)[:top_k]
 
 
+def build_runtime_candidates(
+    *,
+    retriever: GraphRetriever,
+    query_vector: list[float],
+    query_text: str,
+    top_k: int,
+    candidate_top_k: int,
+) -> list[RankedCandidate]:
+    """실제 runtime retriever 결과를 평가 포맷으로 변환합니다."""
+
+    rows = retriever.search_concepts_with_questions(
+        query_vector=query_vector,
+        query_text=query_text,
+        top_k=top_k,
+        candidate_top_k=candidate_top_k,
+    )
+    return [
+        RankedCandidate(
+            section_id=_normalize_concept_id(row["section_id"]),
+            title=str(row.get("title") or ""),
+            final_score=float(row.get("score") or 0.0),
+            vector_score=float(row.get("vector_score") or 0.0),
+            bm25_score=float(row.get("bm25_score") or 0.0),
+        )
+        for row in rows
+    ]
+
+
 def normalize_scores(scores: dict[str, float]) -> dict[str, float]:
     if not scores:
         return {}
@@ -312,7 +370,7 @@ def print_summary(results: list[CaseResult], gold_path: Path) -> None:
     )
     print("-" * 87)
 
-    for strategy in ["vector_only", "bm25_only", *DEFAULT_WEIGHTS.keys()]:
+    for strategy in STRATEGY_ORDER:
         rows = [row for row in results if row.strategy == strategy]
         total = len(rows)
         top1 = sum(row.hit_at(1) for row in rows)
@@ -403,8 +461,10 @@ def main() -> None:
 
     embedder = TEIEmbedder()
     ranker = BM25ConceptRanker(concepts)
+    retriever = create_retriever()
     results = evaluate_cases(
         graph=graph,
+        retriever=retriever,
         embedder=embedder,
         ranker=ranker,
         cases=cases,

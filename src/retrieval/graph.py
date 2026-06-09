@@ -59,14 +59,11 @@ class GraphRetriever:
         vector_scores = self._fetch_vector_scores(query_vector, top_k=candidate_top_k)
         bm25_scores = self._get_bm25_ranker().get_scores(query_text)
         candidate_ids = set(vector_scores) | set(bm25_scores)
-        normalized_vector = self._normalize_scores({
-            section_id: vector_scores.get(section_id, 0.0)
-            for section_id in candidate_ids
-        })
-        normalized_bm25 = self._normalize_scores({
-            section_id: bm25_scores.get(section_id, 0.0)
-            for section_id in candidate_ids
-        })
+
+        # 각 점수군은 자기 점수 분포 안에서 먼저 정규화합니다.
+        # 후보 union에 없는 점수를 0으로 채워 넣고 정규화하면 평가 스크립트와 순위가 달라질 수 있습니다.
+        normalized_vector = self._normalize_scores(vector_scores)
+        normalized_bm25 = self._normalize_scores(bm25_scores)
 
         ranked_candidates = []
         for section_id in candidate_ids:
