@@ -1032,3 +1032,234 @@ Top1 94.29%, Top3 100.00%, Top5 100.00%, MRR 0.967
 ### 정리
 
 질문 검색에서는 vector-only가 항상 최선이 아니다. 의미 유사도는 vector가 담당하고, 단원명/영문 병기/코드 키워드 매칭은 BM25가 보완하도록 hybrid 점수를 적용하면 검색 top1과 top3 품질을 함께 높일 수 있다.
+
+---
+
+## 15. 기출 더보기에서 LLM이 일부 문제를 누락하고도 다음 페이지로 넘어감
+
+### 문제 상황
+
+사용자가 `더 보여줘`를 입력하면 이전 검색 결과에서 다음 기출 3문제를 보여주도록 설계했다.
+
+그러나 실제 응답에서는 LLM이 3문제 중 1문제만 출력하고 끝내는 경우가 있었다.
+
+이때 기존 로직은 LLM이 실제로 몇 문제를 출력했는지 확인하지 않고 offset을 먼저 이동시켰다.
+
+```text
+1. offset 기준 다음 3문제 context 구성
+2. LLM 답변 생성
+3. offset을 3칸 이동
+4. LLM이 1문제만 출력해도 시스템은 3문제를 모두 보여준 것으로 간주
+```
+
+그 결과 사용자가 다시 `더 보여줘`를 입력해도 누락된 문제가 다시 나오지 않고, 다음 묶음으로 넘어갈 수 있었다.
+
+### 원인
+
+기존 더보기 로직은 pagination 상태를 코드가 관리했지만, LLM 출력 결과를 검증하지 않았다.
+
+따라서 다음 두 상태가 서로 불일치할 수 있었다.
+
+```text
+코드 상태: 3문제를 전달했으므로 3문제를 보여줬다고 판단
+실제 응답: LLM이 1문제만 출력
+```
+
+특히 기출 문제는 원문, 정답, 이미지 토큰, 코드 블록이 포함될 수 있어 LLM이 임의로 일부만 출력하거나 요약할 가능성이 있었다.
+
+### 해결 방법
+
+LangGraph 답변 생성 흐름에 기출 문제 ID 검증 노드를 추가했다.
+
+수정 파일: `src/llm/rag_graph.py`
+
+```text
+generate_answer
+-> validate_question_output
+-> 실패 시 retry_question_output
+-> 재검증
+-> 통과 시 finalize_answer
+```
+
+현재 페이지에 반드시 출력되어야 하는 문제 ID를 `expected_question_ids`로 저장한다.
+
+```python
+expected_question_ids = self._get_page_question_ids(
+    filtered_results,
+    question_offset=question_offset,
+    question_limit=question_limit,
+)
+```
+
+LLM 답변 생성 후, 응답 안에 expected ID가 모두 포함되었는지 검사한다.
+
+```python
+missing_question_ids = [
+    question_id
+    for question_id in expected_question_ids
+    if not self._contains_question_id(response, question_id)
+]
+```
+
+누락이 있으면 같은 context로 한 번 더 재생성한다.
+
+수정 파일: `src/llm/prompts.py`
+
+```text
+[누락된 문제 ID]
+2024_3_13
+
+아래 규칙을 반드시 지켜 다시 답변하십시오.
+1. [학습 지식]의 [실제 기출 문제] 섹션에 있는 문제를 모두 출력하십시오.
+2. 누락된 문제 ID를 절대 빠뜨리지 마십시오.
+```
+
+중요한 점은 offset 이동 시점을 변경한 것이다.
+
+기존에는 LLM 답변 생성 전에 offset을 이동했지만, 수정 후에는 검증을 통과한 뒤에만 `pending_page_state`를 실제 `question_page_store`에 반영한다.
+
+```python
+if state.get("question_output_valid", True):
+    pending_page_state = state.get("pending_page_state")
+    if pending_page_state is not None:
+        self.question_page_store[state["session_id"]] = pending_page_state
+```
+
+재시도 후에도 누락이 남아 있으면 offset을 이동하지 않는다.
+
+```text
+누락 발생
+-> 1회 재생성
+-> 그래도 누락
+-> 최종 답변에 검증 실패 안내
+-> offset 유지
+```
+
+### 개선 효과
+
+LLM이 일부 기출 문제를 출력하지 못해도 해당 문제가 조용히 사라지지 않는다.
+
+사용자가 다시 `더 보여줘`를 입력하면 같은 페이지 범위가 다시 LLM에 전달되므로, 누락된 문제를 다시 볼 수 있다.
+
+또한 검증 실패는 JSONL 로그로 남겨 나중에 어떤 질문과 어떤 문제 ID에서 실패했는지 확인할 수 있다.
+
+수정 파일: `src/llm/rag_graph.py`
+
+```text
+logs/rag_validation_failures.jsonl
+```
+
+### 정리
+
+LLM에게 "모두 출력하라"고 프롬프트로 지시하는 것만으로는 충분하지 않다. 기출 문제처럼 누락되면 사용자 학습 흐름이 깨지는 데이터는 코드가 기대 ID를 들고 있다가 실제 응답과 비교해야 한다. offset은 LLM 호출 시점이 아니라 검증 통과 시점에 이동해야 한다.
+
+---
+
+## 16. LLM이 GraphDB에 연결되지 않은 기출 문제 ID를 지어내 출력함
+
+### 문제 상황
+
+특정 단원에는 GraphDB 기준 연결 기출 문제가 7개뿐인데, 사용자가 `더 보여줘`를 반복하면 7개를 초과한 문제 ID가 출력되는 현상이 있었다.
+
+예를 들어 `화이트박스 테스트의 검증 기준` 단원에서 다음과 같은 문제가 섞여 출력되었다.
+
+```text
+[문제 2020_3_12]
+```
+
+그러나 해당 문제는 실제로는 블랙박스 테스트 관련 문제였고, 현재 페이지 context에 포함된 문제도 아니었다.
+
+즉, DB 연결 오류와 별개로 LLM이 허용되지 않은 문제 ID를 추가로 만들어 출력하는 hallucination이 발생했다.
+
+### 원인
+
+기존 검증은 "expected 문제 ID가 답변에 모두 들어있는지"만 확인했다.
+
+```text
+expected_question_ids = {2025_3_2, 2024_3_13, 2024_1_14}
+```
+
+답변이 아래처럼 나오면 기존 검증은 통과했다.
+
+```text
+2025_3_2
+2024_3_13
+2024_1_14
+2020_3_12
+```
+
+이유는 expected ID 3개가 모두 포함되어 있기 때문이다.
+
+하지만 실제로는 `2020_3_12`가 현재 페이지 context에 없는 허용 외 문제였으므로 실패로 처리해야 했다.
+
+### 해결 방법
+
+답변에서 `YYYY_R_N` 형태의 모든 문제 ID를 추출하는 검증을 추가했다.
+
+수정 파일: `src/llm/rag_graph.py`
+
+```python
+def _extract_question_ids(self, response: str) -> list[str]:
+    """답변에 등장한 `YYYY_R_N` 형태의 문제 ID를 등장 순서대로 추출합니다."""
+    question_ids = re.findall(r"(?<![\w])\d{4}_\d+_\d+(?![\w])", response)
+    return list(dict.fromkeys(question_ids))
+```
+
+추출한 actual ID와 현재 페이지의 expected ID를 비교한다.
+
+```python
+actual_question_ids = self._extract_question_ids(response)
+expected_question_id_set = set(expected_question_ids)
+
+unexpected_question_ids = [
+    question_id
+    for question_id in actual_question_ids
+    if question_id not in expected_question_id_set
+]
+```
+
+누락 ID와 허용 외 ID를 모두 검증 실패로 처리한다.
+
+```python
+is_valid = not missing_question_ids and not unexpected_question_ids
+```
+
+재시도 프롬프트도 확장했다.
+
+수정 파일: `src/llm/prompts.py`
+
+```text
+[출력하면 안 되는 문제 ID]
+2020_3_12
+
+3. [학습 지식]에 없는 문제 ID나 [출력하면 안 되는 문제 ID]는 절대 출력하지 마십시오.
+```
+
+검증 실패 로그에는 실제 응답에서 추출된 문제 ID와 허용 외 문제 ID를 함께 기록한다.
+
+```json
+{
+  "stage": "question_output",
+  "missing_question_ids": [],
+  "unexpected_question_ids": ["2020_3_12"],
+  "actual_question_ids": ["2025_3_2", "2024_3_13", "2024_1_14", "2020_3_12"]
+}
+```
+
+### 개선 효과
+
+LLM이 GraphDB에 연결되지 않은 기출 문제를 임의로 추가해도 검증 단계에서 잡을 수 있다.
+
+기출 문제 출력 범위가 현재 페이지 context로 제한되므로, 다음 문제가 줄어든다.
+
+```text
+연결 기출 수보다 더 많은 문제 출력
+다른 단원의 문제 ID 혼입
+출제 횟수와 연결 기출 수를 혼동해 문제를 추가 생성
+```
+
+재시도 후에도 허용 외 ID가 남아 있으면 offset을 이동하지 않으므로, 사용자는 같은 페이지 범위를 다시 요청할 수 있다.
+
+### 정리
+
+LLM 출력 검증은 "누락 방지"만으로는 부족하다. GraphRAG에서 주입한 context 밖의 문제 ID를 추가로 생성하는 경우도 검증해야 한다. expected ID와 actual ID를 집합 비교하면 기출 hallucination을 직접적으로 차단할 수 있다.
