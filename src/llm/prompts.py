@@ -155,11 +155,13 @@ def build_answer_format_retry_prompt(
     if question_only:
         required_format = """- [실제 기출 문제] 섹션만 출력하십시오.
 - 제공된 문제를 모두 출력하십시오.
-- 각 정답은 반드시 <span class="answer-mask">정답: [내용]</span> 형식으로 마스킹하십시오."""
+- 각 정답은 반드시 <span class="answer-mask">정답: [내용]</span> 형식으로 마스킹하십시오.
+- 이미지 토큰이 제공된 문제는 해당 문제 바로 아래에 [[IMAGE:문제ID]] 토큰을 그대로 출력하십시오."""
     else:
         required_format = """- 답변 맨 앞에 [단원 정보] 섹션을 만들고 그 안에 ID, 출제 횟수, 연결된 기출 문제, 중요도를 출력하십시오.
 - [요약 정보], 필요 시 [보충 설명], [실제 기출 문제], [합격 포인트] 순서를 지키십시오.
-- 각 정답은 반드시 <span class="answer-mask">정답: [내용]</span> 형식으로 마스킹하십시오."""
+- 각 정답은 반드시 <span class="answer-mask">정답: [내용]</span> 형식으로 마스킹하십시오.
+- 이미지 토큰이 제공된 문제는 해당 문제 바로 아래에 [[IMAGE:문제ID]] 토큰을 그대로 출력하십시오."""
 
     return f"""당신은 국가기술자격증 실기 학습을 돕는 한국어 튜터 'Pass-Master'입니다.
 

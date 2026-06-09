@@ -441,6 +441,7 @@ class PassMasterGraphChain:
         """필수 답변 형식과 정답 마스킹이 지켜졌는지 검사합니다."""
         response = state.get("response", "")
         expected_question_ids = state.get("expected_question_ids", [])
+        expected_image_question_ids = sorted((state.get("image_paths") or {}).keys())
         is_question_only = state.get("answer_prompt_mode") == "question_only"
         errors = []
 
@@ -461,6 +462,11 @@ class PassMasterGraphChain:
         # 실제 기출을 출력하는 답변이면 정답 마스킹 HTML이 적어도 한 번은 있어야 합니다.
         if expected_question_ids and not self._has_answer_mask(response):
             errors.append("정답 마스킹 HTML 누락")
+
+        # 이미지가 연결된 문제는 답변 안에 해당 위치를 표시하는 토큰이 반드시 있어야 합니다.
+        for question_id in expected_image_question_ids:
+            if not self._has_image_token(response, question_id):
+                errors.append(f"이미지 토큰 누락: [[IMAGE:{question_id}]]")
 
         return {
             "answer_format_errors": errors,
@@ -657,3 +663,7 @@ class PassMasterGraphChain:
         normalized_response = re.sub(r"\s+", "", response)
         normalized_label = re.sub(r"\s+", "", label)
         return f"{normalized_label}:" in normalized_response
+
+    def _has_image_token(self, response: str, question_id: str) -> bool:
+        """이미지가 있는 문제의 `[[IMAGE:문제ID]]` 토큰이 답변에 남아 있는지 확인합니다."""
+        return f"[[IMAGE:{question_id}]]" in response
