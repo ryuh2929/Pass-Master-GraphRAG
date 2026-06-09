@@ -8,6 +8,7 @@ from langgraph.graph import END, StateGraph
 
 from src.llm.llm_switch import get_llm
 from src.llm.prompts import (
+    build_answer_format_retry_prompt,
     build_context_decision_prompt,
     build_question_output_retry_prompt,
     build_query_refine_prompt,
@@ -45,6 +46,9 @@ class RAGGraphState(TypedDict, total=False):
     pending_page_state: dict | None
     question_output_retry_count: int
     question_output_valid: bool
+    answer_format_errors: list[str]
+    answer_format_retry_count: int
+    answer_format_valid: bool
     # 일반 답변과 기출 더보기 답변은 프롬프트 규칙이 다르므로 모드만 상태로 넘깁니다.
     answer_prompt_mode: Literal["default", "question_only"]
     response: str
@@ -95,6 +99,8 @@ class PassMasterGraphChain:
         graph.add_node("generate_answer", self._generate_answer)
         graph.add_node("validate_question_output", self._validate_question_output)
         graph.add_node("retry_question_output", self._retry_question_output)
+        graph.add_node("validate_answer_format", self._validate_answer_format)
+        graph.add_node("retry_answer_format", self._retry_answer_format)
         graph.add_node("finalize_answer", self._finalize_answer)
         graph.add_node("save_history", self._save_history)
 
@@ -142,10 +148,20 @@ class PassMasterGraphChain:
             self._route_after_question_validation,
             {
                 "retry": "retry_question_output",
+                "validate_format": "validate_answer_format",
                 "finalize": "finalize_answer",
             },
         )
         graph.add_edge("retry_question_output", "validate_question_output")
+        graph.add_conditional_edges(
+            "validate_answer_format",
+            self._route_after_answer_format_validation,
+            {
+                "retry": "retry_answer_format",
+                "finalize": "finalize_answer",
+            },
+        )
+        graph.add_edge("retry_answer_format", "validate_question_output")
         graph.add_edge("finalize_answer", "save_history")
         graph.add_edge("save_history", END)
         return graph.compile()
@@ -171,6 +187,9 @@ class PassMasterGraphChain:
             "pending_page_state": None,
             "question_output_retry_count": 0,
             "question_output_valid": True,
+            "answer_format_errors": [],
+            "answer_format_retry_count": 0,
+            "answer_format_valid": True,
             "answer_prompt_mode": "default",
             "context": None,
             "should_generate": True,
@@ -245,6 +264,7 @@ class PassMasterGraphChain:
             "pending_page_state": pending_page_state,
             "remaining_question_count": max(total_questions - pending_page_state["offset"], 0),
             "question_output_retry_count": 0,
+            "answer_format_retry_count": 0,
             "should_generate": True,
             "status": status,
         }
@@ -352,6 +372,7 @@ class PassMasterGraphChain:
             ),
             "pending_page_state": pending_page_state,
             "question_output_retry_count": 0,
+            "answer_format_retry_count": 0,
             "remaining_question_count": max(
                 total_questions - pending_page_state["offset"],
                 0,
@@ -416,6 +437,58 @@ class PassMasterGraphChain:
             "status": "누락된 기출 문제 재생성 중...",
         }
 
+    def _validate_answer_format(self, state: RAGGraphState) -> dict:
+        """필수 답변 형식과 정답 마스킹이 지켜졌는지 검사합니다."""
+        response = state.get("response", "")
+        expected_question_ids = state.get("expected_question_ids", [])
+        is_question_only = state.get("answer_prompt_mode") == "question_only"
+        errors = []
+
+        if is_question_only:
+            if not self._has_heading(response, "실제 기출 문제"):
+                errors.append("[실제 기출 문제] 섹션 누락")
+        else:
+            required_sections = ["단원 정보", "요약 정보", "실제 기출 문제"]
+            for section in required_sections:
+                if not self._has_heading(response, section):
+                    errors.append(f"[{section}] 섹션 누락")
+
+            # ID와 출제 횟수는 독립 섹션이 아니라 [단원 정보] 안의 라벨로 출력하는 형식입니다.
+            for label in ["ID", "출제 횟수", "연결된 기출 문제", "중요도"]:
+                if not self._has_label(response, label):
+                    errors.append(f"[단원 정보]의 {label} 항목 누락")
+
+        # 실제 기출을 출력하는 답변이면 정답 마스킹 HTML이 적어도 한 번은 있어야 합니다.
+        if expected_question_ids and not self._has_answer_mask(response):
+            errors.append("정답 마스킹 HTML 누락")
+
+        return {
+            "answer_format_errors": errors,
+            "answer_format_valid": not errors,
+            "status": (
+                "답변 형식 검증 완료"
+                if not errors
+                else f"답변 형식 누락 감지: {', '.join(errors)}"
+            ),
+        }
+
+    def _retry_answer_format(self, state: RAGGraphState) -> dict:
+        """내용은 유지하되 필수 섹션과 정답 마스킹을 맞추도록 한 번 더 생성합니다."""
+        retry_count = state.get("answer_format_retry_count", 0) + 1
+        retry_prompt = build_answer_format_retry_prompt(
+            context=state.get("context", ""),
+            question=state["user_query"],
+            previous_response=state.get("response", ""),
+            validation_errors=state.get("answer_format_errors", []),
+            question_only=state.get("answer_prompt_mode") == "question_only",
+        )
+        response = self._extract_llm_content(self.llm.invoke(retry_prompt))
+        return {
+            "response": response,
+            "answer_format_retry_count": retry_count,
+            "status": "답변 형식 재생성 중...",
+        }
+
     def _finalize_answer(self, state: RAGGraphState) -> dict:
         """검증 결과에 따라 더보기 offset을 커밋하고 최종 안내 문구를 붙입니다."""
         response = state.get("response", "")
@@ -436,6 +509,13 @@ class PassMasterGraphChain:
                 f"{response}\n\n"
                 f"시스템 검증 결과, 다음 기출 문제가 답변에서 누락되었습니다: {missing_ids}. "
                 "누락 방지를 위해 다음 기출 페이지로는 아직 넘어가지 않았습니다."
+            )
+
+        if not state.get("answer_format_valid", True):
+            errors = ", ".join(state.get("answer_format_errors", []))
+            response = (
+                f"{response}\n\n"
+                f"시스템 검증 결과, 답변 형식 문제가 남아 있습니다: {errors}."
             )
 
         return {
@@ -461,8 +541,16 @@ class PassMasterGraphChain:
     def _route_after_question_validation(self, state: RAGGraphState) -> str:
         """기출 ID 누락이 있으면 한 번만 재생성하고, 이후에는 최종 응답으로 확정합니다."""
         if state.get("question_output_valid", True):
-            return "finalize"
+            return "validate_format"
         if state.get("question_output_retry_count", 0) < 1:
+            return "retry"
+        return "finalize"
+
+    def _route_after_answer_format_validation(self, state: RAGGraphState) -> str:
+        """필수 답변 형식이 빠졌으면 한 번만 재생성합니다."""
+        if state.get("answer_format_valid", True):
+            return "finalize"
+        if state.get("answer_format_retry_count", 0) < 1:
             return "retry"
         return "finalize"
 
@@ -553,3 +641,19 @@ class PassMasterGraphChain:
         """문제 ID가 답변에 실제로 등장했는지 느슨하게 검사합니다."""
         escaped_id = re.escape(question_id)
         return re.search(rf"(?<![\w]){escaped_id}(?![\w])", response) is not None
+
+    def _has_answer_mask(self, response: str) -> bool:
+        """정답 마스킹 HTML이 답변에 포함되어 있는지 확인합니다."""
+        return re.search(r"<span\s+class=[\"']answer-mask[\"']>", response) is not None
+
+    def _has_heading(self, response: str, heading: str) -> bool:
+        """[ID], [ID]:, [ID] : 처럼 콜론 유무가 다른 제목 표기를 모두 허용합니다."""
+        normalized_response = re.sub(r"\s+", "", response)
+        normalized_heading = re.sub(r"\s+", "", heading)
+        return f"[{normalized_heading}]" in normalized_response
+
+    def _has_label(self, response: str, label: str) -> bool:
+        """단원 정보 안의 `ID:`, `출제 횟수:` 같은 라벨 표기를 검사합니다."""
+        normalized_response = re.sub(r"\s+", "", response)
+        normalized_label = re.sub(r"\s+", "", label)
+        return f"{normalized_label}:" in normalized_response

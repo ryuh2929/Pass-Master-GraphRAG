@@ -137,6 +137,54 @@ def build_question_output_retry_prompt(
 [실제 기출 문제] 섹션만 답변하십시오."""
 
 
+# 답변 구조나 정답 마스킹이 빠졌을 때 같은 근거로 답변을 다시 생성하기 위한 프롬프트다.
+def build_answer_format_retry_prompt(
+    context: str,
+    question: str,
+    previous_response: str,
+    validation_errors: list[str],
+    question_only: bool = False,
+) -> str:
+    """
+    Answer-format retry prompt.
+
+    Edit this when the LLM answers with the right content but drops required
+    sections such as [단원 정보], [실제 기출 문제], or answer masking.
+    """
+    error_text = "\n".join(f"- {error}" for error in validation_errors)
+    if question_only:
+        required_format = """- [실제 기출 문제] 섹션만 출력하십시오.
+- 제공된 문제를 모두 출력하십시오.
+- 각 정답은 반드시 <span class="answer-mask">정답: [내용]</span> 형식으로 마스킹하십시오."""
+    else:
+        required_format = """- 답변 맨 앞에 [단원 정보] 섹션을 만들고 그 안에 ID, 출제 횟수, 연결된 기출 문제, 중요도를 출력하십시오.
+- [요약 정보], 필요 시 [보충 설명], [실제 기출 문제], [합격 포인트] 순서를 지키십시오.
+- 각 정답은 반드시 <span class="answer-mask">정답: [내용]</span> 형식으로 마스킹하십시오."""
+
+    return f"""당신은 국가기술자격증 실기 학습을 돕는 한국어 튜터 'Pass-Master'입니다.
+
+이전 답변의 내용은 참고하되, 필수 답변 형식이 누락되었습니다.
+
+[검증 실패 항목]
+{error_text}
+
+[필수 형식]
+{required_format}
+
+[학습 지식]
+{context}
+
+[사용자 질문]
+{question}
+
+[이전 답변]
+{previous_response}
+
+---
+위 검증 실패 항목을 모두 고쳐 다시 답변하십시오.
+문제 내용, 보기, 조건, 문제 ID, 이미지 토큰, 정답의 의미는 변경하지 마십시오."""
+
+
 # 대화 맥락을 독립 질문으로 바꾸기 위한 프롬프트다. 현재 Streamlit의 run_stream 경로에서는 직접 사용하지 않는다.
 def get_condense_question_prompt() -> ChatPromptTemplate:
     """
